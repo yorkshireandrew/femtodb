@@ -85,6 +85,19 @@ public class BuffRead {
                 ((readBuffer2L[6] & 255) <<  8) +
                 ((readBuffer2L[7] & 255) <<  0));
     }
+    
+    static final long readLong3(final byte[] buff, int index, byte[] readBuffer2L)
+    {
+        readFully(buff, index, readBuffer2L, 0, 8);
+        return (((long)readBuffer2L[0] << 56) +
+                ((long)(readBuffer2L[1] & 255) << 48) +
+                ((long)(readBuffer2L[2] & 255) << 40) +
+                ((long)(readBuffer2L[3] & 255) << 32) +
+                ((long)(readBuffer2L[4] & 255) << 24) +
+                ((readBuffer2L[5] & 255) << 16) +
+                ((readBuffer2L[6] & 255) <<  8) +
+                ((readBuffer2L[7] & 255) <<  0));
+    }
 
     static final float readFloat(final byte[] buff, final int index){
     	return Float.intBitsToFloat(readInt(buff, index));

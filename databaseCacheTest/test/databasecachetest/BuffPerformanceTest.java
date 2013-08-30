@@ -13,6 +13,7 @@ public class BuffPerformanceTest {
 		long t1,t2,t3,t4,t5,t6,t7,t8,t9,t10;
 		int INNER = 1000;
 		int SIZE = 100000;
+		byte[] buffer = new byte[8];
 		
 		Long[] longArray = new Long[SIZE];
 		
@@ -31,7 +32,7 @@ public class BuffPerformanceTest {
 			{
 				for(int y = 0; y < SIZE; y++)
 				{
-					BuffWrite.writeLong(data,(y << 3),y);
+					BuffWrite.writeLong2(data,(y << 3),y);
 				}
 			}
 			t2 = System.currentTimeMillis();
@@ -43,7 +44,7 @@ public class BuffPerformanceTest {
 			{
 				for(int y = 0; y < SIZE; y++)
 				{
-					BuffWrite.writeLong2(data,(y << 3),y);
+					BuffWrite.writeLong3(data,(y << 3),y,buffer);
 				}
 			}
 			t4 = System.currentTimeMillis();
@@ -54,7 +55,7 @@ public class BuffPerformanceTest {
 			{
 				for(int y = 0; y < SIZE; y++)
 				{
-					l = BuffRead.readLong(data, (y << 3));
+					l = BuffRead.readLong2(data, (y << 3));
 				}
 			}
 			t6 = System.currentTimeMillis();
@@ -65,7 +66,7 @@ public class BuffPerformanceTest {
 			{
 				for(int y = 0; y < SIZE; y++)
 				{
-					l = BuffRead.readLong2(data, (y << 3));
+					l = BuffRead.readLong3(data, (y << 3),buffer);
 				}
 			}
 			t8 = System.currentTimeMillis();
@@ -98,31 +99,31 @@ public class BuffPerformanceTest {
 	}
 	
 	/*
-	------------
-	w1 11484
-	w2 7047
-	r1 9828
-	r2 8891
-	x1 500
-	------------
-	w1 11187
-	w2 7063
-	r1 9797
-	r2 8047
-	x1 468
-	------------
-	w1 13657
-	w2 8875
-	r1 9890
-	r2 8063
-	x1 468
-	------------
-	w1 11204
-	w2 7046
-	r1 9735
-	r2 8140
-	x1 469
-	l 99999
-	*/
+	 * ------------
+w1 7719
+w2 9578
+r1 8235
+r2 11437
+x1 500
+------------
+w1 7078
+w2 9609
+r1 8735
+r2 11297
+x1 468
+------------
+w1 7485
+w2 10531
+r1 8203
+r2 12281
+x1 485
+------------
+w1 7578
+w2 9547
+r1 8250
+r2 11234
+x1 484
+l 99999
+*/
 	
 }

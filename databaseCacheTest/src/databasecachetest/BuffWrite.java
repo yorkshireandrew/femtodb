@@ -92,6 +92,19 @@ public class BuffWrite {
 	        writeBytes(buff, offset, writeBuffer2L, 0, 8);
 	    }
 	    
+	    static final void writeLong3(final byte[] buff, final int offset, final long v, byte[] writeBuffer2L)
+	    {
+	        writeBuffer2L[0] = (byte)(v >>> 56);
+	        writeBuffer2L[1] = (byte)(v >>> 48);
+	        writeBuffer2L[2] = (byte)(v >>> 40);
+	        writeBuffer2L[3] = (byte)(v >>> 32);
+	        writeBuffer2L[4] = (byte)(v >>> 24);
+	        writeBuffer2L[5] = (byte)(v >>> 16);
+	        writeBuffer2L[6] = (byte)(v >>>  8);
+	        writeBuffer2L[7] = (byte)(v >>>  0);
+	        writeBytes(buff, offset, writeBuffer2L, 0, 8);
+	    }
+	    
 	    static final void writeFloat(final byte[] buff, final int offset, final float v){
 	    	writeInt(buff, offset, Float.floatToIntBits(v));
 	    }
