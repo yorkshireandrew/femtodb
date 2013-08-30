@@ -57,37 +57,9 @@ public class BuffRead {
         int ch4 = buff[index];
         return ((ch1 << 24) + (ch2 << 16) + (ch3 << 8) + (ch4 << 0));
     }
-
-    static final long readLong(final byte[] buff, int index)
-    {
-    	byte readBuffer[] = new byte[8];
-        readFully(buff, index, readBuffer, 0, 8);
-        return (((long)readBuffer[0] << 56) +
-                ((long)(readBuffer[1] & 255) << 48) +
-                ((long)(readBuffer[2] & 255) << 40) +
-                ((long)(readBuffer[3] & 255) << 32) +
-                ((long)(readBuffer[4] & 255) << 24) +
-                ((readBuffer[5] & 255) << 16) +
-                ((readBuffer[6] & 255) <<  8) +
-                ((readBuffer[7] & 255) <<  0));
-    }
-    
-    static final long readLong2(final byte[] buff, int index)
-    {
-    	byte[] readBuffer2L = readBuffer2;
-        readFully(buff, index, readBuffer2L, 0, 8);
-        return (((long)readBuffer2L[0] << 56) +
-                ((long)(readBuffer2L[1] & 255) << 48) +
-                ((long)(readBuffer2L[2] & 255) << 40) +
-                ((long)(readBuffer2L[3] & 255) << 32) +
-                ((long)(readBuffer2L[4] & 255) << 24) +
-                ((readBuffer2L[5] & 255) << 16) +
-                ((readBuffer2L[6] & 255) <<  8) +
-                ((readBuffer2L[7] & 255) <<  0));
-    }
-    
+   
     synchronized
-    static final long readLong3(final byte[] buff, int index)
+    static final long readLong(final byte[] buff, int index)
     {
     	byte[] readBuffer2L = readBuffer2;
         readFully(buff, index, readBuffer2L, 0, 8);
@@ -186,9 +158,4 @@ public class BuffRead {
         // The number of chars produced may be less than utflen
         return new String(chararr, 0, chararr_count);
     }
-	
-	
-	
-	
-	
 }
