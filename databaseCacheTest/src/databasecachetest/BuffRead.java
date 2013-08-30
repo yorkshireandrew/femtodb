@@ -86,8 +86,10 @@ public class BuffRead {
                 ((readBuffer2L[7] & 255) <<  0));
     }
     
-    static final long readLong3(final byte[] buff, int index, byte[] readBuffer2L)
+    synchronized
+    static final long readLong3(final byte[] buff, int index)
     {
+    	byte[] readBuffer2L = readBuffer2;
         readFully(buff, index, readBuffer2L, 0, 8);
         return (((long)readBuffer2L[0] << 56) +
                 ((long)(readBuffer2L[1] & 255) << 48) +
