@@ -101,7 +101,7 @@ public class BuffWrite {
 	    	} 	
 	    }
 	    
-	    static final void writeString(final byte[] buff, final int offset, final String str) throws StringExceedsColumnSizeException {
+	    static final void writeString(final byte[] buff, final int offset, final int limit, final String str) throws StringExceedsColumnSizeException {
 	        int strlen = str.length();
 	        int utflen = 0;
 	        int c, count = 0;
@@ -119,6 +119,7 @@ public class BuffWrite {
 			    }
 	        }
 
+	        if (utflen > limit)throw new StringExceedsColumnSizeException();
 	        if (utflen > 65535)throw new StringExceedsColumnSizeException();
 
 	        byte[] bytearr = new byte[utflen+2];

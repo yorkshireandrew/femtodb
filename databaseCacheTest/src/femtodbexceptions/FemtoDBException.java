@@ -5,7 +5,8 @@ public class FemtoDBException extends Exception {
 	
 	public static final int CHAR_ARRAY_EXCEEDS_COLUMN_SIZE 		= 1;
 	public static final int STRING_EXCEEDS_COLUMN_SIZE 			= 2;
-	public static final int ADDED_COLUMN_TO_OPERATIONAL_TABLE 	= 3;
+	public static final int ALTERING_OPERATIONAL_TABLE 			= 3;
+	public static final int INVALID_VALUE			 			= 4;
 	
 	int subType = 0;
 	FemtoDBException(int subtype){super();subType = subtype;}
