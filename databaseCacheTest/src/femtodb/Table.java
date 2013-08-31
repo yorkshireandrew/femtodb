@@ -1,5 +1,7 @@
 package femtodb;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -8,55 +10,78 @@ import femtodbexceptions.AlteringOperationalTableException;
 import femtodbexceptions.InvalidValueException;
 
 public class Table {
-	static final int DEFAULT_FILE_SIZE_IN_BYTES		= 3000;
-	static final int DEFAULT_CACHE_SIZE_IN_BYTES	= 1000000;
+	static final int 	DEFAULT_FILE_SIZE_IN_BYTES				= 3000;
+	static final int 	DEFAULT_CACHE_SIZE_IN_BYTES				= 1000000;
+	static final double	DEFAULT_REMOVE_OCCUPANCY_RATIO			= 0.2;
+	static final double DEFAULT_ALLOW_COMBINE_OCCUPANCY_RATIO  	= 0.9;
 	
 	/** The database that contains this table */
-	FemtoDB		database;
+	private final FemtoDB		database;
 	
 	/** The name of the table, shown in exceptions */
-	String 		name;
+	private final String 		name;
 	
 	/** The table number */
-	int			tableNumber;
+	private int					tableNumber;
 	
 	/** The size of the storage files in bytes */
-	int			fileSize;
+	private int					fileSize;
 	
 	/** The number of rows in each file */
-	int			rowsPerFile;
+	private int					rowsPerFile;
 	
 	/** Was rowsPerFile set manually */
-	boolean		rowsPerFileSet;
+	private boolean				rowsPerFileSet;
 	
-	/** The cache size. */
-	int			cacheSize;
-	/** Was the target cache size set manually */
-	boolean		cacheSizeSet;
+	/** If a file's occupancy ratio is below this value, Should it gets removed
+	 * from the cache then the table will attempt to combine it into neighbouring files */
+	private double		removeOccupancyRatio;
 	
-	/** The number of files (pages) held within the cache */
-	int			cachePages;
+	/** The actual number of occupied rows below which combination into neighbouring files is triggered */
+	private int			removeOccupancy;
+	
+	/** The maximum occupancy ratio a file is permitted to have after a neighbouring file has being combined with it.
+	 * This should be less than one to reduce combination-split thrashing */
+	private double		combineOccupancyRatio;
+	
+	/** The actual number of occupied rows a file is permitted to have following a combination with a neighbour */
+	private int			combineOccupancy;
 	
 	/** Has the table been made operational */
-	boolean		tableIsOperational;
-		
-	/** Arrays and values for column meta data */
-	String[]	columnNames;
-	int[]		columnByteOffset;
-	int[]		columnByteWidth;
-	int			tableWidth;
+	private boolean		tableIsOperational;
 	
 	/** The next free file number, so the naming of each file is unique */
-	long						nextFileNumber;
+	private long		nextFileNumber;
+	
+	// ************ COLUMN INFORMATION *******************
+		
+	/** Arrays and values for column meta data */
+	private String[]	columnNames;
+	private int[]		columnByteOffset;
+	private int[]		columnByteWidth;
+	private int			tableWidth;
+	
+	// ************ CACHES AND META DATA TABLES **********
+	/** The cache size. */
+	private int							cacheSize;
+	
+	/** Was the target cache size set manually */
+	private boolean						cacheSizeSet;
+	
+	/** The number of pages (files) held in the cache */
+	private int 						cachePages;
 	
 	/** The cache for the table. Not serialised and must be reallocated on loading */
-	transient byte[] 			cache;
+	private transient byte[] 			cache;
+	
+	/** Scratch cache. A small one file cache used during removal of files with low occupancy */
+	private transient byte[]			scratchCache;
 	
 	/** The cache meta data used to handle swapping efficiently. Not serialised */
-	transient CacheMetadata[]	cacheMetadata;
+	private transient CacheMetadata[]	cacheMetadata;
 	
 	/** The file meta data holding what is in each file and its cache status */
-	List<FileMetadata>			fileMetadata;
+	private List<FileMetadata>			fileMetadata;
 		
 	//*******************************************************************
 	//*******************************************************************
@@ -66,8 +91,9 @@ public class Table {
 	//*******************************************************************
 	//*******************************************************************	
 
-	Table(String name, int tableNumber, String primaryKeyName)
+	Table(FemtoDB database, String name, int tableNumber, String primaryKeyName)
 	{
+		this.database		= database;
 		this.name			= name;
 		this.tableNumber	= tableNumber;
 		columnNames 		= new String[0];
@@ -78,6 +104,9 @@ public class Table {
 		cacheSizeSet 		= false;
 		rowsPerFileSet 		= false;
 		tableIsOperational 	= false;
+		
+		removeOccupancyRatio 	= DEFAULT_REMOVE_OCCUPANCY_RATIO;
+		combineOccupancyRatio 	= DEFAULT_ALLOW_COMBINE_OCCUPANCY_RATIO;
 		
 		// add primary key column
 		if(primaryKeyName == null)primaryKeyName="primarykey";
@@ -106,11 +135,13 @@ public class Table {
 		cacheSizeSet = true;
 	}
 	
-	final void makeOperational()throws AlteringOperationalTableException, InvalidValueException
+	final void makeOperational()throws InvalidValueException, IOException
 	{
-		if(tableIsOperational) throw new AlteringOperationalTableException();
+		if(tableIsOperational) return;
+		tableIsOperational = true;
 		
 		long actualFileSize;
+		
 		// Validate rowsPerFile if set otherwise set it automatically to a good value 
 		if(rowsPerFileSet)
 		{
@@ -134,6 +165,16 @@ public class Table {
 			}
 		}
 		
+		// Validate and set remove occupancy
+		if(removeOccupancyRatio >= 0.5) throw new InvalidValueException("Table " + name + " removeOccupancyRatio must be set less than 0.5. It was " + removeOccupancyRatio);
+		removeOccupancy = (int)(rowsPerFile * removeOccupancyRatio);
+		
+		// Validate and set combine occupancy
+		if(combineOccupancyRatio > 1) throw new InvalidValueException("Table " + name + " combineOccupancyRatio cannot exceed one. It was " + combineOccupancyRatio);
+		combineOccupancy = (int)(rowsPerFile * combineOccupancyRatio);
+		
+		if(combineOccupancy <= removeOccupancy) throw new InvalidValueException("Table " + name + " Resulting removeOccupancy must be less than combineOccupancy for file combining to function correctly. It was " + removeOccupancy + ":" + combineOccupancy);
+
 		// Validate cache size if set otherwise set it automatically to the default value
 		if(cacheSizeSet)
 		{
@@ -149,6 +190,7 @@ public class Table {
 		cachePages 	= cacheSize / (int)actualFileSize;
 		cacheSize 	= cachePages * (int)actualFileSize;
 		
+		// allocate memory for the cache
 		try{
 			cache = new byte[cacheSize];
 		}catch(OutOfMemoryError e)
@@ -156,6 +198,15 @@ public class Table {
 			// re-throw any memory exception providing more information
 			throw new OutOfMemoryError("Table " + name + " was unable to allocate its cache of " + cacheSize + " bytes");
 		}
+		
+		// allocate memory for the scratch cache
+		try{
+			scratchCache = new byte[fileSize];
+		}catch(OutOfMemoryError e)
+		{
+			// re-throw any memory exception providing more information
+			throw new OutOfMemoryError("Table " + name + " was unable to allocate its scratchCache of " + fileSize + " bytes");
+		}		
 		
 		// Fill the cache meta data array values with indicate nothing to persist
 		cacheMetadata = new CacheMetadata[cachePages];
@@ -187,12 +238,20 @@ public class Table {
 		cacheMetadata[0].modified = true;
 		cacheMetadata[0].fileMetadataIndex = 0;
 		
+		// make the directory for the tables files
+		String directory = database.path + File.pathSeparator + Integer.toString(tableNumber);
+		File f = new File(directory);
+		if(!f.mkdir())
+		{
+			throw new IOException("Table " + name + " was unable to create directory " + directory);
+		}
+		
 		// Directly flush the first cache entry to create a file 
 		// This is needed in case a shutdown-restart happens before
 		// the first entry gets inserted in the table.
 		
 		//TODO 
-//		freeCachePage(0);
+		freeCachePage(0);
 	}
 
 	//*******************************************************************
@@ -342,5 +401,23 @@ public class Table {
 	
 	private long nextFilenumber() {
 		return nextFileNumber++;
+	}
+
+	public final double getRemoveOccupancyRatio() {
+		return removeOccupancyRatio;
+	}
+
+	public final void setRemoveOccupancyRatio(double removeOccupancyRatio) {
+		if(tableIsOperational) return;
+		this.removeOccupancyRatio = removeOccupancyRatio;
+	}
+
+	public final double getCombineOccupancyRatio() {
+		return combineOccupancyRatio;
+	}
+
+	public final void setCombineOccupancyRatio(double combineOccupancyRatio) {
+		if(tableIsOperational) return;
+		this.combineOccupancyRatio = combineOccupancyRatio;
 	}
 }
