@@ -23,6 +23,8 @@ public class FileMetadata {
 	transient int 	cacheIndex;
 	/** The number of rows held within the file */
 	int 	rows;
+	/** The ID of the last update to this file. Used for improving the efficiency of backups */
+	long 	modificationServiceNumber;
 	
 	FileMetadata(
 			Table owner,
@@ -33,7 +35,8 @@ public class FileMetadata {
 			long largestPK,
 			boolean cached,
 			int cacheIndex, 
-			int rows)
+			int rows,
+			long modificationServiceNumber)
 	{
 		this.filenumber = filenumber;
 		this.lowerBound = lowerBound;
@@ -42,6 +45,7 @@ public class FileMetadata {
 		this.largestPK = largestPK;
 		this.cached = cached;
 		this.rows = rows;
+		this.modificationServiceNumber = modificationServiceNumber;
 		
 		filename = owner.database.path + 
 				File.pathSeparator + 

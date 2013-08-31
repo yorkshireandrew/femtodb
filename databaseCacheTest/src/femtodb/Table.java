@@ -1,16 +1,13 @@
 package femtodb;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileNotFoundException;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import femtodbexceptions.AlteringOperationalTableException;
 import femtodbexceptions.InvalidValueException;
 
 public class Table {
@@ -18,15 +15,17 @@ public class Table {
 	static final int 	DEFAULT_CACHE_SIZE_IN_BYTES				= 1000000;
 	static final double	DEFAULT_REMOVE_OCCUPANCY_RATIO			= 0.2;
 	static final double DEFAULT_ALLOW_COMBINE_OCCUPANCY_RATIO  	= 0.9;
+	static final long	NOT_MODIFIED_LRU_BOOST					= 10;
+	static final long	OVER_HALF_FULL_LRU_BOOST				= 5;
 	
 	/** The database that contains this table */
-	private final FemtoDB		database;
+	final FemtoDB				database;
 	
 	/** The name of the table, shown in exceptions */
 	private final String 		name;
 	
 	/** The table number */
-	private int					tableNumber;
+	int							tableNumber;
 	
 	/** The size of the storage files in bytes */
 	private int					fileSize;
@@ -77,9 +76,6 @@ public class Table {
 	
 	/** The cache for the table. Not serialised and must be reallocated on loading */
 	private transient byte[] 			cache;
-	
-	/** Scratch cache. A small one file cache used during removal of files with low occupancy */
-	private transient byte[]			scratchCache;
 	
 	/** The cache meta data used to handle swapping efficiently. Not serialised */
 	private transient CacheMetadata[]	cacheMetadata;
@@ -203,15 +199,6 @@ public class Table {
 			throw new OutOfMemoryError("Table " + name + " was unable to allocate its cache of " + cacheSize + " bytes");
 		}
 		
-		// allocate memory for the scratch cache
-		try{
-			scratchCache = new byte[fileSize];
-		}catch(OutOfMemoryError e)
-		{
-			// re-throw any memory exception providing more information
-			throw new OutOfMemoryError("Table " + name + " was unable to allocate its scratchCache of " + fileSize + " bytes");
-		}		
-		
 		// Fill the cache meta data array values with indicate nothing to persist
 		cacheMetadata = new CacheMetadata[cachePages];
 		for(int x = 0; x < cachePages; x++)
@@ -234,7 +221,8 @@ public class Table {
 				Long.MIN_VALUE,
 				true,			// the new file entry is 'cached' in first cache entry. This cache is then flushed to create the first file
 				0, 				// associate with first cache entry
-				0				// contains no rows
+				0,				// contains no rows
+				0L				// modificationServiceNumber initially zero
 			)
 		);
 		
@@ -404,12 +392,12 @@ public class Table {
 		// prepare local variables used to see if combination is possible
 		List<FileMetadata> fileMetadataL = fileMetadata;
 		int fmdRows = fmd.rows;
-		int frontCombinedRows;
-		int backCombinedRows;
+		int frontCombinedRows = -1;
+		int backCombinedRows = -1;
 		boolean frontCombinePossible = false;
 		boolean backCombinePossible = false;
-		FileMetadata frontFMD;
-		FileMetadata backFMD;
+		FileMetadata frontFMD = null;
+		FileMetadata backFMD = null;
 		
 		// Check if combination with front is possible
 		if(fileMetadataIndex > 0)
@@ -448,7 +436,22 @@ public class Table {
 			return;
 		}
 		
-		// now both front and back combines must be possible so pick shortest
+		// If we fall through to here both front and back combines must be possible
+		
+		// Combine if one of them is already cached
+		if((frontFMD.cached)&&(!backFMD.cached))
+		{
+			combineWithFront(page,fmd,frontFMD);
+			return;			
+		}
+		
+		if((!frontFMD.cached)&&(backFMD.cached))
+		{
+			combineWithBack(page,fmd,backFMD);
+			return;			
+		}
+		
+		// Nether are cached so pick shortest
 		if(frontCombinedRows < backCombinedRows)
 		{
 			combineWithFront(page,fmd,frontFMD);
@@ -461,6 +464,8 @@ public class Table {
 	
 	private final void freeCachePageNoCombine(int page, FileMetadata fmd) throws IOException
 	{
+		fmd.cached = false;
+		fmd.cacheIndex = -1;
 		File f = new File(fmd.filename);
 		FileOutputStream fos = new FileOutputStream(f);
 		fos.write(cache, (page * fileSize), fileSize);
@@ -468,7 +473,83 @@ public class Table {
 		fos.close();	
 	}
 	
+	private final void fillCachePage(int page, FileMetadata fmd) throws IOException
+	{
+		File f = new File(fmd.filename);
+		FileInputStream fis = new FileInputStream(f);
+		int readByteCount = fis.read(cache, (page * fileSize), fileSize);
+		if(readByteCount != fileSize) throw new IOException("Table " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename);
+		fis.close();
+		fmd.cached = true;
+		fmd.cacheIndex = page;
+		cacheMetadata[page].fileMetadataIndex = fileMetadata.indexOf(fmd);
+	}
 	
+	private final void combineWithFront(int page, FileMetadata fmd, FileMetadata frontFMD) throws IOException
+	{
+		// ensure frontFMD is 
+		if(!frontFMD.cached)
+		{
+			// free a different page in the cache without attempting to combine
+			int pageToForceFree = chooseLRUExcluding(page);
+			int fmdi = cacheMetadata[pageToForceFree].fileMetadataIndex;
+			FileMetadata fileToForceFree = null;
+			if(fmdi != -1)
+			{
+				fileToForceFree = fileMetadata.get(fmdi);
+				freeCachePageNoCombine(pageToForceFree, fileToForceFree);
+			}
+			
+			// cache the file associated with frontFMD in the 
+			fillCachePage(pageToForceFree, frontFMD);
+		}
+		
+		//TODO the actual combination into frontFMD
+	}
+	private final void combineWithBack(int page, FileMetadata fmd, FileMetadata backFMD){/** TODO */}
+	
+	/** Find the LRU cache page, other than the page given */
+	private final int chooseLRUExcluding(final int pageToExclude)
+	{
+		long bestValueSoFar = Long.MAX_VALUE;
+		int bestCandidateSoFar = -1;
+		int halfOfRowsPerFile = rowsPerFile >> 1;
+		for(int x = 0; x < cachePages; x++)
+		{
+			if(x == pageToExclude)continue;
+			long value = cacheLRURankingAlgorithm(x,halfOfRowsPerFile);
+			if(value < bestValueSoFar){bestCandidateSoFar = x; bestValueSoFar = value;}
+		}
+		return bestCandidateSoFar;
+	}
+	
+	/** Find the LRU cache page */
+	private final int chooseLRU()
+	{
+		long bestValueSoFar = Long.MAX_VALUE;
+		int bestCandidateSoFar = -1;
+		int halfOfRowsPerFile = rowsPerFile >> 1;
+		for(int x = 0; x < cachePages; x++)
+		{
+			long value = cacheLRURankingAlgorithm(x,halfOfRowsPerFile);
+			if(value < bestValueSoFar){bestCandidateSoFar = x; bestValueSoFar = value;}
+		}
+		return bestCandidateSoFar;
+	}
+	
+	/** Ranking algorithm used to determine best LRU page in cache to swap out */
+	private final long cacheLRURankingAlgorithm(int page, int halfOfRowsPerFile)
+	{
+		CacheMetadata cm = cacheMetadata[page];
+		int fmdIndex = cm.fileMetadataIndex;
+		if(fmdIndex == -1)return Long.MIN_VALUE; // its unused so perfect
+		long retval = cm.lastUsedServiceNumber;
+		if(cm.modified) retval -= NOT_MODIFIED_LRU_BOOST;
+		if(fileMetadata.get(fmdIndex).rows > halfOfRowsPerFile)retval -= OVER_HALF_FULL_LRU_BOOST;
+		return retval;
+	}
+	
+	/** Returns a new int array consisting of the passed in array appended with the passed in value */
 	private int[] addToArray(int[] in, int toAdd)
 	{
 		int len = in.length;
@@ -476,7 +557,8 @@ public class Table {
 		retval[len] = toAdd;
 		return retval;
 	}
-	
+
+	/** Returns a new String array consisting of the passed in array  appended with the passed in value */
 	private String[] addToArray(String[] in, String toAdd)
 	{
 		int len = in.length;
@@ -485,24 +567,33 @@ public class Table {
 		return retval;
 	}
 	
+	/** Returns the next available file number for the table that has never been used */
 	private long nextFilenumber() {
 		return nextFileNumber++;
 	}
-
-	public final double getRemoveOccupancyRatio() {
+	
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+	//                FIELD  GET / SET METHODS
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+	
+	final double getRemoveOccupancyRatio() {
 		return removeOccupancyRatio;
 	}
 
-	public final void setRemoveOccupancyRatio(double removeOccupancyRatio) {
+	final void setRemoveOccupancyRatio(double removeOccupancyRatio) {
 		if(tableIsOperational) return;
 		this.removeOccupancyRatio = removeOccupancyRatio;
 	}
 
-	public final double getCombineOccupancyRatio() {
+	final double getCombineOccupancyRatio() {
 		return combineOccupancyRatio;
 	}
 
-	public final void setCombineOccupancyRatio(double combineOccupancyRatio) {
+	final void setCombineOccupancyRatio(double combineOccupancyRatio) {
 		if(tableIsOperational) return;
 		this.combineOccupancyRatio = combineOccupancyRatio;
 	}

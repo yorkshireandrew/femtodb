@@ -35,7 +35,7 @@ public class BuffPerformanceTest {
 			{
 				for(int y = 0; y < SIZE; y++)
 				{
-					BuffWrite.writeLong2(data,(y << 3),y);
+					BuffWrite.writeLong(data,(y << 3),y);
 				}
 			}
 			t2 = System.currentTimeMillis();
@@ -47,7 +47,7 @@ public class BuffPerformanceTest {
 			{
 				for(int y = 0; y < SIZE; y++)
 				{
-					BuffWrite.writeLong3(data,(y << 3),y);
+					BuffWrite.writeLong(data,(y << 3),y);
 				}
 			}
 			t4 = System.currentTimeMillis();
@@ -58,7 +58,7 @@ public class BuffPerformanceTest {
 			{
 				for(int y = 0; y < SIZE; y++)
 				{
-					l = BuffRead.readLong2(data, (y << 3));
+					l = BuffRead.readLong(data, (y << 3));
 				}
 			}
 			t6 = System.currentTimeMillis();
@@ -69,7 +69,7 @@ public class BuffPerformanceTest {
 			{
 				for(int y = 0; y < SIZE; y++)
 				{
-					l = BuffRead.readLong3(data, (y << 3));
+					l = BuffRead.readLong(data, (y << 3));
 				}
 			}
 			t8 = System.currentTimeMillis();

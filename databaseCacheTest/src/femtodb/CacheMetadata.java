@@ -2,14 +2,14 @@ package femtodb;
 
 public class CacheMetadata {
 	boolean modified;
-	long 	lastUsed;
+	long 	lastUsedServiceNumber;
 	int		fileMetadataIndex;
 	
-	CacheMetadata(boolean modified, long lastUsed, int fileMetadataIndex)
+	CacheMetadata(boolean modified, long lastUsedServiceNumber, int fileMetadataIndex)
 	{
-		this.modified 			= modified;
-		this.lastUsed 			= lastUsed;
-		this.fileMetadataIndex 	= fileMetadataIndex;
+		this.modified 				= modified;
+		this.lastUsedServiceNumber 	= lastUsedServiceNumber;
+		this.fileMetadataIndex 		= fileMetadataIndex;
 	}
 }
 
