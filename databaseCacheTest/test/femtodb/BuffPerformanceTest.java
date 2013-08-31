@@ -1,4 +1,7 @@
-package databasecachetest;
+package femtodb;
+
+import femtodb.BuffRead;
+import femtodb.BuffWrite;
 
 public class BuffPerformanceTest {
 	

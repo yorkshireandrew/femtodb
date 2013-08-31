@@ -1,4 +1,4 @@
-package databasecachetest;
+package femtodb;
 
 public class CacheMetadata {
 	boolean modified;
