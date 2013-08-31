@@ -1,7 +1,11 @@
 package femtodb;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -249,9 +253,7 @@ public class Table {
 		// Directly flush the first cache entry to create a file 
 		// This is needed in case a shutdown-restart happens before
 		// the first entry gets inserted in the table.
-		
-		//TODO 
-		freeCachePage(0);
+		freeCachePageNoCombine(0, fileMetadata.get(0));
 	}
 
 	//*******************************************************************
@@ -382,6 +384,90 @@ public class Table {
 	//*******************************************************************
 	//*******************************************************************
 	//*******************************************************************
+	
+	private final void freeCachePage(final int page, final boolean allowCombine) throws IOException
+	{
+		CacheMetadata cachePageData = cacheMetadata[page];
+		int fileMetadataIndex = cachePageData.fileMetadataIndex;
+		
+		// If the fileMetadataIndex is -1 the cache page is already free so return
+		if(fileMetadataIndex == -1)return;
+		
+		FileMetadata fmd = fileMetadata.get(fileMetadataIndex);
+		
+		if(!allowCombine)
+		{
+			freeCachePageNoCombine(page, fmd);
+			return;
+		}
+		
+		// prepare local variables used to see if combination is possible
+		List<FileMetadata> fileMetadataL = fileMetadata;
+		int fmdRows = fmd.rows;
+		int frontCombinedRows;
+		int backCombinedRows;
+		boolean frontCombinePossible = false;
+		boolean backCombinePossible = false;
+		FileMetadata frontFMD;
+		FileMetadata backFMD;
+		
+		// Check if combination with front is possible
+		if(fileMetadataIndex > 0)
+		{
+			frontFMD = fileMetadataL.get(fileMetadataIndex-1);
+			frontCombinedRows = fmdRows + frontFMD.rows;
+			if(frontCombinedRows < combineOccupancy)frontCombinePossible = true;
+		}
+		
+		// Check if combination with back is possible
+		int lastIndex = fileMetadataL.size()-1;
+		if(fileMetadataIndex < lastIndex)
+		{
+			backFMD = fileMetadataL.get(fileMetadataIndex+1);
+			backCombinedRows = fmdRows + backFMD.rows;
+			if(backCombinedRows < combineOccupancy)backCombinePossible = true;
+			
+		}
+		
+		// choose free-ing action based on what is possible
+		if((!frontCombinePossible)&&(!backCombinePossible))
+		{
+			freeCachePageNoCombine(page,fmd);
+			return;
+		}
+		
+		if((frontCombinePossible)&&(!backCombinePossible))
+		{
+			combineWithFront(page,fmd,frontFMD);
+			return;
+		}
+		
+		if((!frontCombinePossible)&&(backCombinePossible))
+		{
+			combineWithBack(page,fmd,backFMD);
+			return;
+		}
+		
+		// now both front and back combines must be possible so pick shortest
+		if(frontCombinedRows < backCombinedRows)
+		{
+			combineWithFront(page,fmd,frontFMD);
+		}
+		else
+		{
+			combineWithBack(page,fmd,backFMD);
+		}	
+	}
+	
+	private final void freeCachePageNoCombine(int page, FileMetadata fmd) throws IOException
+	{
+		File f = new File(fmd.filename);
+		FileOutputStream fos = new FileOutputStream(f);
+		fos.write(cache, (page * fileSize), fileSize);
+		fos.flush();
+		fos.close();	
+	}
+	
 	
 	private int[] addToArray(int[] in, int toAdd)
 	{
