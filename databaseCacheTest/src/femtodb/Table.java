@@ -17,8 +17,8 @@ public class Table {
 	static final double DEFAULT_ALLOW_COMBINE_OCCUPANCY_RATIO  	= 0.9;
 	static final long	NOT_MODIFIED_LRU_BOOST					= 10;
 	static final long	OVER_HALF_FULL_LRU_BOOST				= 5;
-	private static final long PK_CACHE_NOT_SET 					= Long.MIN_VALUE;
-	private static final long FLAG_CACHE_NOT_SET 				= Short.MIN_VALUE;
+	private static final long  PK_CACHE_NOT_SET 				= Long.MIN_VALUE;
+	private static final short FLAG_CACHE_NOT_SET 				= Short.MIN_VALUE;
 	
 	
 	/** The database that contains this table */
@@ -41,31 +41,31 @@ public class Table {
 	
 	/** If a file's occupancy ratio is below this value, Should it gets removed
 	 * from the cache then the table will attempt to combine it into neighbouring files */
-	private double		removeOccupancyRatio;
+	private double				removeOccupancyRatio;
 	
 	/** The actual number of occupied rows below which combination into neighbouring files is triggered */
-	private int			removeOccupancy;
+	private int					removeOccupancy;
 	
 	/** The maximum occupancy ratio a file is permitted to have after a neighbouring file has being combined with it.
 	 * This should be less than one to reduce combination-split thrashing */
-	private double		combineOccupancyRatio;
+	private double				combineOccupancyRatio;
 	
 	/** The actual number of occupied rows a file is permitted to have following a combination with a neighbour */
-	private int			combineOccupancy;
+	private int					combineOccupancy;
 	
 	/** Has the table been made operational */
-	private boolean		tableIsOperational;
+	private boolean				tableIsOperational;
 	
 	/** The next free file number, so the naming of each file is unique */
-	private long		nextFileNumber;
+	private long				nextFileNumber;
 	
 	// ************ COLUMN INFORMATION *******************
 		
 	/** Arrays and values for column meta data */
-	private String[]	columnNames;
-	private int[]		columnByteOffset;
-	private int[]		columnByteWidth;
-	private int			tableWidth;
+	private String[]			columnNames;
+	private int[]				columnByteOffset;
+	private int[]				columnByteWidth;
+	private int					tableWidth;
 	
 	// ************ CACHES AND META DATA TABLES **********
 	/** The cache size in bytes. */
@@ -83,8 +83,14 @@ public class Table {
 	/** Contains the primary keys of each row in the cache if extracted, otherwise PK_CACHE_NOT_SET */
 	private transient long[]			pkCache;
 	
+	/** An array containing only PK_CACHE_NOT_SET used to quickly erase old pkCache entries when a cache page gets filled from disk */
+	private transient long[]			pkCacheEraser;
+	
 	/** Contains the primary keys of each row in the cache if extracted, otherwise FLAG_CACHE_NOT_SET */
 	private transient short[]			flagCache;
+	
+	/** An array containing only FLAG_CACHE_NOT_SET used to quickly erase old flagCache entries when a cache page gets filled from disk */
+	private transient short[]			flagCacheEraser;
 	
 	/** Array holding FileMetadata references explaining what is in each cache page, or null if the page is already free */
 	private FileMetadata[]				cachePageContents;	
@@ -218,8 +224,18 @@ public class Table {
 			// re-throw any memory exception providing more information
 			throw new OutOfMemoryError("Table " + name + " was unable to allocate its primary key cache");
 		}
+		
+		// allocate memory for the pkCacheEraser
+		try{
+			pkCacheEraser = new long[rowsPerFile];
+			for(int x = 0; x < rowsPerFile;x++){pkCacheEraser[x] = PK_CACHE_NOT_SET;}
+		}catch(OutOfMemoryError e)
+		{
+			// re-throw any memory exception providing more information
+			throw new OutOfMemoryError("Table " + name + " was unable to allocate its primary key cache eraser");
+		}
 
-		// allocate memory for the pkCache
+		// allocate memory for the flagCache
 		try{
 			int maxRowsInCache = rowsPerFile * cachePages;
 			flagCache = new short[(maxRowsInCache)];
@@ -228,6 +244,16 @@ public class Table {
 		{
 			// re-throw any memory exception providing more information
 			throw new OutOfMemoryError("Table " + name + " was unable to allocate its flag cache");
+		}
+		
+		// allocate memory for the flagCacheEraser
+		try{
+			flagCacheEraser = new short[rowsPerFile];
+			for(int x = 0; x < rowsPerFile;x++){flagCacheEraser[x] = FLAG_CACHE_NOT_SET;}
+		}catch(OutOfMemoryError e)
+		{
+			// re-throw any memory exception providing more information
+			throw new OutOfMemoryError("Table " + name + " was unable to allocate its flag cache eraser");
 		}
 		
 		// set the cache page contents
@@ -457,13 +483,13 @@ public class Table {
 		
 		if((frontCombinePossible)&&(!backCombinePossible))
 		{
-			combineWithFront(page,cacheToFreeFMD,frontFMD);
+			combine(page,cacheToFreeFMD,frontFMD,true);
 			return;
 		}
 		
 		if((!frontCombinePossible)&&(backCombinePossible))
 		{
-			combineWithBack(page,cacheToFreeFMD,backFMD);
+			combine(page,cacheToFreeFMD,backFMD,false);
 			return;
 		}
 		
@@ -472,24 +498,24 @@ public class Table {
 		// Combine if one of them is already cached
 		if((frontFMD.cached)&&(!backFMD.cached))
 		{
-			combineWithFront(page,cacheToFreeFMD,frontFMD);
+			combine(page,cacheToFreeFMD,frontFMD,true);
 			return;			
 		}
 		
 		if((!frontFMD.cached)&&(backFMD.cached))
 		{
-			combineWithBack(page,cacheToFreeFMD,backFMD);
+			combine(page,cacheToFreeFMD,backFMD,false);
 			return;			
 		}
 		
 		// Nether are cached so pick shortest
 		if(frontCombinedRows < backCombinedRows)
 		{
-			combineWithFront(page,cacheToFreeFMD,frontFMD);
+			combine(page,cacheToFreeFMD,frontFMD,true);
 		}
 		else
 		{
-			combineWithBack(page,cacheToFreeFMD,backFMD);
+			combine(page,cacheToFreeFMD,backFMD,false);
 		}	
 	}
 	
@@ -519,12 +545,19 @@ public class Table {
 		fmd.cacheIndex = page;
 		fmd.modified = false;
 		cachePageContents[page] = fmd;
+		
+		// Set pkCache and flagCache entries for page loaded page to NOT_SET.
+		// This causes the primary key and flag values to be lazy de-serialised.
+		int rowsPerFileL = rowsPerFile;
+		int destPos = page * rowsPerFileL;
+		System.arraycopy(pkCacheEraser, 0, pkCache, destPos, rowsPerFileL);
+		System.arraycopy(flagCacheEraser, 0, flagCache, destPos, rowsPerFileL);
 	}
 	
-	private final void combineWithFront(int page, FileMetadata fmd, FileMetadata frontFMD) throws IOException
+	private final void combine(int page, FileMetadata toCombineFMD, FileMetadata targetFMD, boolean isFront) throws IOException
 	{
 		// ensure frontFMD is cached
-		if(!frontFMD.cached)
+		if(!targetFMD.cached)
 		{
 			// free a different page in the cache without attempting to combine
 			int pageToForceFree = chooseLRUExcluding(page);
@@ -532,12 +565,102 @@ public class Table {
 			freeCachePageNoCombine(pageToForceFree, fileToForceFree);
 
 			// cache the file associated with frontFMD in the 
-			fillCachePage(pageToForceFree, frontFMD);
+			fillCachePage(pageToForceFree, targetFMD);
+		}
+
+		// Execute code specific to front or back combination
+		if(isFront)
+		{
+			combineWithFront(page, toCombineFMD, targetFMD);
+		}
+		else
+		{
+			combineWithBack(page, toCombineFMD, targetFMD);
 		}
 		
-		//TODO the actual combination into frontFMD
+		// code common to both front or back combination
+		targetFMD.rows = targetFMD.rows + toCombineFMD.rows;
+		// use largest modificationServiceNumber
+		long toCombineFMDModificationServiceNumber = toCombineFMD.modificationServiceNumber;
+		if(toCombineFMDModificationServiceNumber > targetFMD.modificationServiceNumber)targetFMD.modificationServiceNumber = toCombineFMDModificationServiceNumber;
+		// use largest lastUsedServiceNumber
+		long toCombineFMDLastUsedServiceNumber = toCombineFMD.lastUsedServiceNumber;
+		if(toCombineFMDLastUsedServiceNumber > targetFMD.modificationServiceNumber)targetFMD.lastUsedServiceNumber = toCombineFMDLastUsedServiceNumber;	
+		targetFMD.modified = true;
+
+		// free up toCombine cache and remove file
+		cachePageContents[page] = null;
+		File f = new File(toCombineFMD.filename);
+		f.delete();
+		fileMetadata.remove(toCombineFMD);		
 	}
-	private final void combineWithBack(int page, FileMetadata fmd, FileMetadata backFMD){/** TODO */}
+	
+	private final void combineWithFront(int page, FileMetadata toCombineFMD, FileMetadata frontFMD)
+	{
+		frontFMD.upperBound 	= toCombineFMD.upperBound;
+		frontFMD.largestPK 		= toCombineFMD.largestPK;
+		
+		// localise things used several times
+		int frontFMDCacheIndex 	= frontFMD.cacheIndex;
+		int frontFMDRows 		= frontFMD.rows;
+		int toCombineFMDRows 	= toCombineFMD.rows;
+		int rowsPerFileL		= rowsPerFile;
+		int fileSizeL			= fileSize;
+		int tableWidthL			= tableWidth;
+		byte[] cacheL			= cache;
+		long[] pkCacheL			= pkCache;
+		short[] flagCacheL		= flagCache;
+		
+		// append the rows in toCombine's cache after the rows in front's cache 
+		int srcPos = page * fileSizeL;
+		int destPos = frontFMDCacheIndex * fileSizeL + tableWidthL * frontFMDRows;
+		System.arraycopy(cacheL, srcPos, cacheL, destPos, (toCombineFMDRows * tableWidthL));	
+		
+		// append pk and flag cache entries after the rows in the front's cache
+		int srcPos2 = page * rowsPerFileL;
+		int destPos2 = frontFMDCacheIndex * rowsPerFileL + frontFMDRows;
+		System.arraycopy(pkCacheL, srcPos2, pkCacheL, destPos2, toCombineFMDRows);
+		System.arraycopy(flagCacheL, srcPos2, flagCacheL, destPos2, toCombineFMDRows);
+	}
+	
+	private final void combineWithBack(int page, FileMetadata toCombineFMD, FileMetadata backFMD)
+	{
+		backFMD.lowerBound 		= toCombineFMD.lowerBound;
+		backFMD.smallestPK 		= toCombineFMD.smallestPK;
+		
+		// localise things used several times
+		int backFMDCacheIndex 	= backFMD.cacheIndex;
+		int backFMDRows 		= backFMD.rows;
+		int toCombineFMDRows 	= toCombineFMD.rows;
+		int rowsPerFileL		= rowsPerFile;
+		int fileSizeL			= fileSize;
+		int tableWidthL			= tableWidth;
+		byte[] cacheL			= cache;
+		long[] pkCacheL			= pkCache;
+		short[] flagCacheL		= flagCache;
+		
+		// shift the back's cache up to make room
+		int srcPos1 	= backFMDCacheIndex * fileSizeL;
+		int destPos1 	= srcPos1 + tableWidthL * toCombineFMDRows;
+		System.arraycopy(cacheL, srcPos1, cacheL, destPos1, (backFMDRows * tableWidthL));	
+
+		// shift the back's pk and flag cache to make room
+		int srcPos2 	= backFMDCacheIndex * rowsPerFileL;
+		int destPos2 	= srcPos2 + toCombineFMDRows;
+		System.arraycopy(pkCacheL, srcPos2, pkCacheL, destPos2, backFMDRows );	
+		System.arraycopy(flagCacheL, srcPos2, flagCacheL, destPos2, backFMDRows );
+		
+		// insert rows in toCombine's cache into the space made in back's cache 
+		int srcPos3		= page * fileSizeL;
+		int destPos3	= srcPos1;
+		System.arraycopy(cacheL, srcPos3, cacheL, destPos3, (toCombineFMDRows * tableWidthL));	
+
+		// insert rows in toCombine's pk and flag cache into the space made in back's cache 
+		int srcPos4 	= page * rowsPerFileL;
+		int destPos4	= srcPos2;
+		System.arraycopy(pkCacheL, srcPos4, pkCacheL, destPos4, toCombineFMDRows );
+		System.arraycopy(flagCacheL, srcPos4, flagCacheL, destPos4, toCombineFMDRows );	
+	}
 	
 	/** Find the LRU cache page, other than the page given */
 	private final int chooseLRUExcluding(final int pageToExclude)
