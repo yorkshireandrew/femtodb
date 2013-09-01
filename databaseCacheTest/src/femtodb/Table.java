@@ -17,6 +17,9 @@ public class Table {
 	static final double DEFAULT_ALLOW_COMBINE_OCCUPANCY_RATIO  	= 0.9;
 	static final long	NOT_MODIFIED_LRU_BOOST					= 10;
 	static final long	OVER_HALF_FULL_LRU_BOOST				= 5;
+	private static final long PK_CACHE_NOT_SET 					= Long.MIN_VALUE;
+	private static final long FLAG_CACHE_NOT_SET 				= Short.MIN_VALUE;
+	
 	
 	/** The database that contains this table */
 	final FemtoDB				database;
@@ -65,7 +68,7 @@ public class Table {
 	private int			tableWidth;
 	
 	// ************ CACHES AND META DATA TABLES **********
-	/** The cache size. */
+	/** The cache size in bytes. */
 	private int							cacheSize;
 	
 	/** Was the target cache size set manually */
@@ -77,11 +80,17 @@ public class Table {
 	/** The cache for the table. Not serialised and must be reallocated on loading */
 	private transient byte[] 			cache;
 	
-	/** The cache meta data used to handle swapping efficiently. Not serialised */
-	private transient CacheMetadata[]	cacheMetadata;
+	/** Contains the primary keys of each row in the cache if extracted, otherwise PK_CACHE_NOT_SET */
+	private transient long[]			pkCache;
 	
-	/** The file meta data holding what is in each file and its cache status */
-	private List<FileMetadata>			fileMetadata;
+	/** Contains the primary keys of each row in the cache if extracted, otherwise FLAG_CACHE_NOT_SET */
+	private transient short[]			flagCache;
+	
+	/** Array holding FileMetadata references explaining what is in each cache page, or null if the page is already free */
+	private FileMetadata[]				cachePageContents;	
+			
+	/** The meta data on all the tables files, holding what is in each file and its cache status */
+	private List<FileMetadata>			fileMetadata;			
 		
 	//*******************************************************************
 	//*******************************************************************
@@ -199,38 +208,62 @@ public class Table {
 			throw new OutOfMemoryError("Table " + name + " was unable to allocate its cache of " + cacheSize + " bytes");
 		}
 		
-		// Fill the cache meta data array values with indicate nothing to persist
-		cacheMetadata = new CacheMetadata[cachePages];
-		for(int x = 0; x < cachePages; x++)
+		// allocate memory for the pkCache
+		try{
+			int maxRowsInCache = rowsPerFile * cachePages;
+			pkCache = new long[(maxRowsInCache)];
+			for(int x = 0; x < maxRowsInCache;x++){pkCache[x] = PK_CACHE_NOT_SET;}
+		}catch(OutOfMemoryError e)
 		{
-			cacheMetadata[x] = new CacheMetadata(false,-1,-1);
+			// re-throw any memory exception providing more information
+			throw new OutOfMemoryError("Table " + name + " was unable to allocate its primary key cache");
 		}
+
+		// allocate memory for the pkCache
+		try{
+			int maxRowsInCache = rowsPerFile * cachePages;
+			flagCache = new short[(maxRowsInCache)];
+			for(int x = 0; x < maxRowsInCache;x++){pkCache[x] = FLAG_CACHE_NOT_SET;}
+		}catch(OutOfMemoryError e)
+		{
+			// re-throw any memory exception providing more information
+			throw new OutOfMemoryError("Table " + name + " was unable to allocate its flag cache");
+		}
+		
+		// set the cache page contents
+		cachePageContents = new FileMetadata[cachePages];
 		
 		// Initialise nextFileNumber for creating unique filenames
 		nextFileNumber = 0;
 		
 		// Fill the fileMetadata with a single entry referring to an empty file 
 		fileMetadata = new ArrayList<FileMetadata>();
-		fileMetadata.add(
-			new FileMetadata(
+		
+		FileMetadata firstFile = new FileMetadata(
 				this,
 				nextFilenumber(), 
 				Long.MIN_VALUE, // ensure the first primary key added falls into this file
 				Long.MAX_VALUE,
 				Long.MIN_VALUE,	// ensure first value in table inserts after the zero rows
 				Long.MIN_VALUE,
-				true,			// the new file entry is 'cached' in first cache entry. This cache is then flushed to create the first file
+				false,			// the new file entry is 'cached' in first cache entry. This cache is then flushed to create the first file
 				0, 				// associate with first cache entry
 				0,				// contains no rows
 				0L				// modificationServiceNumber initially zero
-			)
 		);
 		
-		// associate first cache entry with first fileMetadata entry
-		cacheMetadata[0].modified = true;
-		cacheMetadata[0].fileMetadataIndex = 0;
+		// make firstFile appear to be loaded into the first cache page and will be written to a file when flushed
+		firstFile.cached = true;
+		firstFile.cacheIndex = 0;
+		firstFile.modified = true;
 		
-		// make the directory for the tables files
+		// add firstFile into fileMetadata list
+		fileMetadata.add(firstFile);
+		
+		// Finally make firstFile appear to be in the cache by completing a cachePageContents entry
+		cachePageContents[0] = firstFile;
+		
+		// make the directory for the tables files to be written to
 		String directory = database.path + File.pathSeparator + Integer.toString(tableNumber);
 		File f = new File(directory);
 		if(!f.mkdir())
@@ -375,23 +408,21 @@ public class Table {
 	
 	private final void freeCachePage(final int page, final boolean allowCombine) throws IOException
 	{
-		CacheMetadata cachePageData = cacheMetadata[page];
-		int fileMetadataIndex = cachePageData.fileMetadataIndex;
+		FileMetadata cacheToFreeFMD = cachePageContents[page];
+		if(cacheToFreeFMD == null)return;
 		
-		// If the fileMetadataIndex is -1 the cache page is already free so return
-		if(fileMetadataIndex == -1)return;
-		
-		FileMetadata fmd = fileMetadata.get(fileMetadataIndex);
-		
+		// If we are not combining then simply delegate, making no decisions
 		if(!allowCombine)
 		{
-			freeCachePageNoCombine(page, fmd);
+			freeCachePageNoCombine(page, cacheToFreeFMD);
 			return;
 		}
 		
-		// prepare local variables used to see if combination is possible
+		// Determine what combinations are possible
 		List<FileMetadata> fileMetadataL = fileMetadata;
-		int fmdRows = fmd.rows;
+		int cacheToFreeFMDIndex = fileMetadataL.indexOf(cacheToFreeFMD);
+		
+		int cacheToFreeFMDRows = cacheToFreeFMD.rows;
 		int frontCombinedRows = -1;
 		int backCombinedRows = -1;
 		boolean frontCombinePossible = false;
@@ -400,19 +431,19 @@ public class Table {
 		FileMetadata backFMD = null;
 		
 		// Check if combination with front is possible
-		if(fileMetadataIndex > 0)
+		if(cacheToFreeFMDIndex > 0)
 		{
-			frontFMD = fileMetadataL.get(fileMetadataIndex-1);
-			frontCombinedRows = fmdRows + frontFMD.rows;
+			frontFMD = fileMetadataL.get(cacheToFreeFMDIndex-1);
+			frontCombinedRows = cacheToFreeFMDRows + frontFMD.rows;
 			if(frontCombinedRows < combineOccupancy)frontCombinePossible = true;
 		}
 		
 		// Check if combination with back is possible
 		int lastIndex = fileMetadataL.size()-1;
-		if(fileMetadataIndex < lastIndex)
+		if(cacheToFreeFMDIndex < lastIndex)
 		{
-			backFMD = fileMetadataL.get(fileMetadataIndex+1);
-			backCombinedRows = fmdRows + backFMD.rows;
+			backFMD = fileMetadataL.get(cacheToFreeFMDIndex+1);
+			backCombinedRows = cacheToFreeFMDRows + backFMD.rows;
 			if(backCombinedRows < combineOccupancy)backCombinePossible = true;
 			
 		}
@@ -420,19 +451,19 @@ public class Table {
 		// choose free-ing action based on what is possible
 		if((!frontCombinePossible)&&(!backCombinePossible))
 		{
-			freeCachePageNoCombine(page,fmd);
+			freeCachePageNoCombine(page,cacheToFreeFMD);
 			return;
 		}
 		
 		if((frontCombinePossible)&&(!backCombinePossible))
 		{
-			combineWithFront(page,fmd,frontFMD);
+			combineWithFront(page,cacheToFreeFMD,frontFMD);
 			return;
 		}
 		
 		if((!frontCombinePossible)&&(backCombinePossible))
 		{
-			combineWithBack(page,fmd,backFMD);
+			combineWithBack(page,cacheToFreeFMD,backFMD);
 			return;
 		}
 		
@@ -441,65 +472,65 @@ public class Table {
 		// Combine if one of them is already cached
 		if((frontFMD.cached)&&(!backFMD.cached))
 		{
-			combineWithFront(page,fmd,frontFMD);
+			combineWithFront(page,cacheToFreeFMD,frontFMD);
 			return;			
 		}
 		
 		if((!frontFMD.cached)&&(backFMD.cached))
 		{
-			combineWithBack(page,fmd,backFMD);
+			combineWithBack(page,cacheToFreeFMD,backFMD);
 			return;			
 		}
 		
 		// Nether are cached so pick shortest
 		if(frontCombinedRows < backCombinedRows)
 		{
-			combineWithFront(page,fmd,frontFMD);
+			combineWithFront(page,cacheToFreeFMD,frontFMD);
 		}
 		else
 		{
-			combineWithBack(page,fmd,backFMD);
+			combineWithBack(page,cacheToFreeFMD,backFMD);
 		}	
 	}
 	
 	private final void freeCachePageNoCombine(int page, FileMetadata fmd) throws IOException
 	{
-		fmd.cached = false;
-		fmd.cacheIndex = -1;
 		File f = new File(fmd.filename);
 		FileOutputStream fos = new FileOutputStream(f);
-		fos.write(cache, (page * fileSize), fileSize);
+		fos.write(cache, (page * fileSize), (tableWidth * fmd.rows));
 		fos.flush();
 		fos.close();	
+		
+		// mark the fmd as not cached and the cachePageContents as now free
+		fmd.cached = false;
+		fmd.cacheIndex = -1;
+		cachePageContents[page] = null;
 	}
 	
 	private final void fillCachePage(int page, FileMetadata fmd) throws IOException
 	{
 		File f = new File(fmd.filename);
 		FileInputStream fis = new FileInputStream(f);
-		int readByteCount = fis.read(cache, (page * fileSize), fileSize);
-		if(readByteCount != fileSize) throw new IOException("Table " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename);
+		int bytesToRead = tableWidth * fmd.rows;
+		int readByteCount = fis.read(cache, (page * fileSize), bytesToRead);
+		if(readByteCount != bytesToRead) throw new IOException("Table " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename);
 		fis.close();
 		fmd.cached = true;
 		fmd.cacheIndex = page;
-		cacheMetadata[page].fileMetadataIndex = fileMetadata.indexOf(fmd);
+		fmd.modified = false;
+		cachePageContents[page] = fmd;
 	}
 	
 	private final void combineWithFront(int page, FileMetadata fmd, FileMetadata frontFMD) throws IOException
 	{
-		// ensure frontFMD is 
+		// ensure frontFMD is cached
 		if(!frontFMD.cached)
 		{
 			// free a different page in the cache without attempting to combine
 			int pageToForceFree = chooseLRUExcluding(page);
-			int fmdi = cacheMetadata[pageToForceFree].fileMetadataIndex;
-			FileMetadata fileToForceFree = null;
-			if(fmdi != -1)
-			{
-				fileToForceFree = fileMetadata.get(fmdi);
-				freeCachePageNoCombine(pageToForceFree, fileToForceFree);
-			}
-			
+			FileMetadata fileToForceFree = cachePageContents[pageToForceFree];
+			freeCachePageNoCombine(pageToForceFree, fileToForceFree);
+
 			// cache the file associated with frontFMD in the 
 			fillCachePage(pageToForceFree, frontFMD);
 		}
@@ -540,12 +571,11 @@ public class Table {
 	/** Ranking algorithm used to determine best LRU page in cache to swap out */
 	private final long cacheLRURankingAlgorithm(int page, int halfOfRowsPerFile)
 	{
-		CacheMetadata cm = cacheMetadata[page];
-		int fmdIndex = cm.fileMetadataIndex;
-		if(fmdIndex == -1)return Long.MIN_VALUE; // its unused so perfect
-		long retval = cm.lastUsedServiceNumber;
-		if(cm.modified) retval -= NOT_MODIFIED_LRU_BOOST;
-		if(fileMetadata.get(fmdIndex).rows > halfOfRowsPerFile)retval -= OVER_HALF_FULL_LRU_BOOST;
+		FileMetadata fmd = cachePageContents[page];
+		if(fmd == null)return Long.MIN_VALUE; // perfect an unused page :-)
+		long retval = fmd.lastUsedServiceNumber;
+		if(fmd.modified) retval -= NOT_MODIFIED_LRU_BOOST;
+		if(fmd.rows > halfOfRowsPerFile)retval -= OVER_HALF_FULL_LRU_BOOST;
 		return retval;
 	}
 	

@@ -23,8 +23,15 @@ public class FileMetadata {
 	transient int 	cacheIndex;
 	/** The number of rows held within the file */
 	int 	rows;
-	/** The ID of the last update to this file. Used for improving the efficiency of backups */
+	/** The ServiceNumber of the last update to this file. Used for improving the efficiency of backups */
 	long 	modificationServiceNumber;
+	
+	// Fields used for cache management 
+	/** the ServiceNumber of the last use of the cache page */
+	long 	lastUsedServiceNumber;
+	
+	/** Set true if the cache page has been modified since it was loaded from disk */
+	boolean	modified;
 	
 	FileMetadata(
 			Table owner,
