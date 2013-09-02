@@ -93,7 +93,7 @@ public class Table {
 	private transient short[]			flagCacheEraser;
 	
 	/** Array holding FileMetadata references explaining what is in each cache page, or null if the page is already free */
-	private FileMetadata[]				cachePageContents;	
+	private FileMetadata[]				cacheContents;	
 			
 	/** The meta data on all the tables files, holding what is in each file and its cache status */
 	private List<FileMetadata>			fileMetadata;			
@@ -257,7 +257,7 @@ public class Table {
 		}
 		
 		// set the cache page contents
-		cachePageContents = new FileMetadata[cachePages];
+		cacheContents = new FileMetadata[cachePages];
 		
 		// Initialise nextFileNumber for creating unique filenames
 		nextFileNumber = 0;
@@ -287,7 +287,7 @@ public class Table {
 		fileMetadata.add(firstFile);
 		
 		// Finally make firstFile appear to be in the cache by completing a cachePageContents entry
-		cachePageContents[0] = firstFile;
+		cacheContents[0] = firstFile;
 		
 		// make the directory for the tables files to be written to
 		String directory = database.path + File.pathSeparator + Integer.toString(tableNumber);
@@ -447,7 +447,7 @@ public class Table {
 		freeCachePage(pageToForceFree,allowCombine);
 	
 		// cache the file associated with toSave
-		fillCachePage(pageToForceFree, toLoad);
+		loadFileIntoGivenCachePage(pageToForceFree, toLoad);
 		return pageToForceFree;
 	}
 	// ***********************************************************************************
@@ -455,8 +455,14 @@ public class Table {
 	/** Ensures a given cache page is made free. If the argument allowCombine is true then the method will attempt to combine the associated file into its neighbours when its occupancy (number of rows) is low. */
 	private final void freeCachePage(final int page, final boolean allowCombine) throws IOException
 	{
-		FileMetadata cacheToFreeFMD = cachePageContents[page];
+		FileMetadata cacheToFreeFMD = cacheContents[page];
 		if(cacheToFreeFMD == null)return;
+		if(!cacheToFreeFMD.modified)
+		{
+			cacheToFreeFMD.cached = false;
+			cacheContents[page] = null;
+			return;
+		}
 		
 		// If we are not combining then simply delegate, making no decisions
 		int cacheToFreeFMDRows = cacheToFreeFMD.rows;
@@ -553,15 +559,16 @@ public class Table {
 		// mark the fmd as not cached and the cachePageContents as now free
 		fmd.cached = false;
 		fmd.cacheIndex = -1;
-		cachePageContents[page] = null;
+		cacheContents[page] = null;
 	}
 	
+	/** Combines a given cached file, on a given cache page, into one of its neighbours */
 	private final void combine(int page, FileMetadata toCombineFMD, FileMetadata targetFMD, boolean isFront) throws IOException
 	{
-		// ensure frontFMD is cached
+		// ensure targetFMD is cached
 		if(!targetFMD.cached)
 		{
-			fetchIntoCacheIgnoringTheCachePage(targetFMD, page);
+			loadFileIntoCacheIgnoringGivenCachePage(targetFMD, page);
 		}
 
 		// Execute code specific to front or back combination
@@ -576,16 +583,18 @@ public class Table {
 		
 		// code common to both front or back combination
 		targetFMD.rows = targetFMD.rows + toCombineFMD.rows;
+		
 		// use largest modificationServiceNumber
 		long toCombineFMDModificationServiceNumber = toCombineFMD.modificationServiceNumber;
 		if(toCombineFMDModificationServiceNumber > targetFMD.modificationServiceNumber)targetFMD.modificationServiceNumber = toCombineFMDModificationServiceNumber;
+		
 		// use largest lastUsedServiceNumber
 		long toCombineFMDLastUsedServiceNumber = toCombineFMD.lastUsedServiceNumber;
 		if(toCombineFMDLastUsedServiceNumber > targetFMD.modificationServiceNumber)targetFMD.lastUsedServiceNumber = toCombineFMDLastUsedServiceNumber;	
 		targetFMD.modified = true;
 
 		// free up toCombine cache and remove file
-		cachePageContents[page] = null;
+		cacheContents[page] = null;
 		File f = new File(toCombineFMD.filename);
 		f.delete();
 		fileMetadata.remove(toCombineFMD);		
@@ -659,18 +668,23 @@ public class Table {
 	}
 	
 	/** Fills a given cache page reading the file referenced by its FileMetadata fmd argument from disk. The page must be made free before this method is called. */
-	private final void fillCachePage(int page, FileMetadata fmd) throws IOException
+	private final void loadFileIntoGivenCachePage(int page, FileMetadata fmd) throws IOException
 	{
+		// load the file
 		File f = new File(fmd.filename);
 		FileInputStream fis = new FileInputStream(f);
 		int bytesToRead = tableWidth * fmd.rows;
 		int readByteCount = fis.read(cache, (page * fileSize), bytesToRead);
 		if(readByteCount != bytesToRead) throw new IOException("Table " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename);
 		fis.close();
+		
+		// update fmd
 		fmd.cached = true;
 		fmd.cacheIndex = page;
 		fmd.modified = false;
-		cachePageContents[page] = fmd;
+		
+		// add to cacheContents
+		cacheContents[page] = fmd;
 		
 		// Set pkCache and flagCache entries for page loaded page to NOT_SET.
 		// This causes the primary key and flag values to be lazy de-serialised.
@@ -683,15 +697,15 @@ public class Table {
 	/** Fetches a given file into the cache, returning the cache page that it was fetched into. It is forbidden from using cache page given in the argument pageToExclude. 
 	 * It also does not attempt to combine the flushed caches contents with its neighbours. This method is really of special use while combining and splitting files. 
 	 * The fetchIntoCache method provides a more general implementation for loading files into the cache. */	
-	private final int fetchIntoCacheIgnoringTheCachePage(final FileMetadata toLoad, final int pageToExclude) throws IOException
+	private final int loadFileIntoCacheIgnoringGivenCachePage(final FileMetadata toLoad, final int pageToExclude) throws IOException
 	{
 		// free a different page in the cache without attempting to combine
 		int pageToForceFree = chooseLRUExcluding(pageToExclude);
-		FileMetadata fileToForceFree = cachePageContents[pageToForceFree];
+		FileMetadata fileToForceFree = cacheContents[pageToForceFree];
 		freeCachePageNoCombine(pageToForceFree, fileToForceFree);
 	
 		// cache the file associated with toSave
-		fillCachePage(pageToForceFree, toLoad);
+		loadFileIntoGivenCachePage(pageToForceFree, toLoad);
 		return pageToForceFree;
 	}
 	
@@ -727,7 +741,7 @@ public class Table {
 	/** Ranking algorithm used to determine best LRU page in cache to swap out */
 	private final long cacheLRURankingAlgorithm(int page, int halfOfRowsPerFile)
 	{
-		FileMetadata fmd = cachePageContents[page];
+		FileMetadata fmd = cacheContents[page];
 		if(fmd == null)return Long.MIN_VALUE; // perfect an unused page :-)
 		long retval = fmd.lastUsedServiceNumber;
 		if(fmd.modified) retval -= NOT_MODIFIED_LRU_BOOST;
@@ -776,12 +790,10 @@ public class Table {
 		fos.close();
 		
 		// recursive call to save fmd again... should execute without splitting
-		freeCachePageNoCombine(page, fmd);
-		
-		//TODO consider shortcuts if modified is false. Need to ensure a split still occurs if the page is full
+		freeCachePageNoCombine(page, fmd);		
 	}
 	
-	long getPrimaryKeyForCacheRow(int page,int row)
+	private long getPrimaryKeyForCacheRow(int page,int row)
 	{
 		// try the pkCache
 		int pkCacheIndex = page * rowsPerFile + row;
