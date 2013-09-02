@@ -126,7 +126,7 @@ public class Table {
 		// add primary key column
 		if(primaryKeyName == null)primaryKeyName="primarykey";
 		addLongColumn(primaryKeyName);
-
+		addShortColumn("femto_db_status");
 	}
 	
 	//*******************************************************************
@@ -539,9 +539,11 @@ public class Table {
 		}	
 	}
 	
-	/** Free's a given cache page writing its contents to disk. It is generally a last resort called only where there may be a risk of a cascade of combines occurring, for example during the splitting or combining of files. It requires the FileMetadata of the flushed file to also be given as an argument.*/
+	/** Free's a given cache page writing its contents to disk. Gets called by freeCachePage directly or indirectly*/
 	private final void freeCachePageNoCombine(int page, FileMetadata fmd) throws IOException
 	{
+		if(fmd.rows == rowsPerFile)splitAndSavePage(page, fmd);
+		
 		File f = new File(fmd.filename);
 		FileOutputStream fos = new FileOutputStream(f);
 		fos.write(cache, (page * fileSize), (tableWidth * fmd.rows));
@@ -731,6 +733,66 @@ public class Table {
 		if(fmd.modified) retval -= NOT_MODIFIED_LRU_BOOST;
 		if(fmd.rows > halfOfRowsPerFile)retval -= OVER_HALF_FULL_LRU_BOOST;
 		return retval;
+	}
+	
+	/** Called when a page being flushed is completely full and must be split, generating a new file */
+	private final void splitAndSavePage(int page, FileMetadata fmd) throws IOException
+	{
+		int newRowsInFirst 					= fmd.rows >> 1; // note this is also the index of first row in second
+		int newIndexOfLastRowInFirst 		= newRowsInFirst - 1; 
+		int newRowsInSecond 				= rowsPerFile - newRowsInFirst;		
+		long primaryKeyOfLastRowInFirst 	= getPrimaryKeyForCacheRow(page,newIndexOfLastRowInFirst);	
+		long primaryKeyOfFirstRowInSecond 	= getPrimaryKeyForCacheRow(page,newRowsInFirst);
+		long lastPrimaryKeyRowInSecond 		= fmd.largestPK;
+		long upperBoundOfSecond 			= fmd.upperBound;
+		
+		// correct fmd for the split
+		fmd.largestPK 	= primaryKeyOfLastRowInFirst;
+		fmd.upperBound 	= primaryKeyOfFirstRowInSecond;
+		fmd.rows 		= newRowsInFirst;
+		
+		// create metadata for the second file
+		FileMetadata secondFile = new FileMetadata(
+				this,
+				nextFilenumber(), 
+				primaryKeyOfFirstRowInSecond,
+				upperBoundOfSecond,
+				primaryKeyOfFirstRowInSecond,
+				lastPrimaryKeyRowInSecond,
+				false, 	// not cached		
+				0, 		// dont care
+				newRowsInSecond,
+				fmd.modificationServiceNumber
+		);
+		
+		int indexInFMDTable = fileMetadata.indexOf(fmd);
+		fileMetadata.add((indexInFMDTable+1), secondFile);
+		
+		// create the second file
+		File f = new File(secondFile.filename);
+		FileOutputStream fos = new FileOutputStream(f);
+		fos.write(cache, (page * fileSize) + (newRowsInFirst * tableWidth), (newRowsInSecond * tableWidth));
+		fos.flush();
+		fos.close();
+		
+		// recursive call to save fmd again... should execute without splitting
+		freeCachePageNoCombine(page, fmd);
+		
+		//TODO consider shortcuts if modified is false. Need to ensure a split still occurs if the page is full
+	}
+	
+	long getPrimaryKeyForCacheRow(int page,int row)
+	{
+		// try the pkCache
+		int pkCacheIndex = page * rowsPerFile + row;
+		long pkCacheResult = pkCache[pkCacheIndex];
+		if(pkCacheResult != PK_CACHE_NOT_SET)return pkCacheResult;
+		
+		// get from cache bytes
+		int cacheIndex = (page * fileSize) + (tableWidth * row);
+		long deserialisedResult = BuffRead.readLong(cache, cacheIndex);
+		pkCache[pkCacheIndex] = deserialisedResult;
+		return deserialisedResult;
 	}
 	
 	/** Returns a new int array consisting of the passed in array appended with the passed in value */
