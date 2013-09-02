@@ -432,13 +432,36 @@ public class Table {
 	//*******************************************************************
 	//*******************************************************************
 	
+	//*****************************************************************
+	 /**
+	 * The main function used by the table for fetching a required file into the cache. It finds the LRU page in the cache, frees it, then uses that page to load the requested file.
+	 * @param toLoad		A FileMetadata object indicating which file to load into the cache.
+	 * @param allowCombine	When true the method attempts to combine the cached data that was flushed back to disk into neighbouring files. This argument should be set true, unless there is a risk of a cascade of combines occurring. 
+	 * @return 				The cache page the file was loaded into.
+	 * @throws IOException	Thrown if there was a problem flushing the LRU cache page, or loading the requested file.
+	 */
+	private final int fetchIntoCache(final FileMetadata toLoad, final boolean allowCombine) throws IOException
+	{
+		// free a different page in the cache without attempting to combine
+		int pageToForceFree = chooseLRU();
+		freeCachePage(pageToForceFree,allowCombine);
+	
+		// cache the file associated with toSave
+		fillCachePage(pageToForceFree, toLoad);
+		return pageToForceFree;
+	}
+	// ***********************************************************************************
+
+	/** Ensures a given cache page is made free. If the argument allowCombine is true then the method will attempt to combine the associated file into its neighbours when its occupancy (number of rows) is low. */
 	private final void freeCachePage(final int page, final boolean allowCombine) throws IOException
 	{
 		FileMetadata cacheToFreeFMD = cachePageContents[page];
 		if(cacheToFreeFMD == null)return;
 		
 		// If we are not combining then simply delegate, making no decisions
-		if(!allowCombine)
+		int cacheToFreeFMDRows = cacheToFreeFMD.rows;
+		int combineOccupancyL = combineOccupancy;
+		if((!allowCombine)||(cacheToFreeFMDRows >= combineOccupancyL))
 		{
 			freeCachePageNoCombine(page, cacheToFreeFMD);
 			return;
@@ -447,8 +470,6 @@ public class Table {
 		// Determine what combinations are possible
 		List<FileMetadata> fileMetadataL = fileMetadata;
 		int cacheToFreeFMDIndex = fileMetadataL.indexOf(cacheToFreeFMD);
-		
-		int cacheToFreeFMDRows = cacheToFreeFMD.rows;
 		int frontCombinedRows = -1;
 		int backCombinedRows = -1;
 		boolean frontCombinePossible = false;
@@ -461,7 +482,7 @@ public class Table {
 		{
 			frontFMD = fileMetadataL.get(cacheToFreeFMDIndex-1);
 			frontCombinedRows = cacheToFreeFMDRows + frontFMD.rows;
-			if(frontCombinedRows < combineOccupancy)frontCombinePossible = true;
+			if(frontCombinedRows < combineOccupancyL)frontCombinePossible = true;
 		}
 		
 		// Check if combination with back is possible
@@ -470,8 +491,7 @@ public class Table {
 		{
 			backFMD = fileMetadataL.get(cacheToFreeFMDIndex+1);
 			backCombinedRows = cacheToFreeFMDRows + backFMD.rows;
-			if(backCombinedRows < combineOccupancy)backCombinePossible = true;
-			
+			if(backCombinedRows < combineOccupancyL)backCombinePossible = true;	
 		}
 		
 		// choose free-ing action based on what is possible
@@ -519,6 +539,7 @@ public class Table {
 		}	
 	}
 	
+	/** Free's a given cache page writing its contents to disk. It is generally a last resort called only where there may be a risk of a cascade of combines occurring, for example during the splitting or combining of files. It requires the FileMetadata of the flushed file to also be given as an argument.*/
 	private final void freeCachePageNoCombine(int page, FileMetadata fmd) throws IOException
 	{
 		File f = new File(fmd.filename);
@@ -533,39 +554,12 @@ public class Table {
 		cachePageContents[page] = null;
 	}
 	
-	private final void fillCachePage(int page, FileMetadata fmd) throws IOException
-	{
-		File f = new File(fmd.filename);
-		FileInputStream fis = new FileInputStream(f);
-		int bytesToRead = tableWidth * fmd.rows;
-		int readByteCount = fis.read(cache, (page * fileSize), bytesToRead);
-		if(readByteCount != bytesToRead) throw new IOException("Table " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename);
-		fis.close();
-		fmd.cached = true;
-		fmd.cacheIndex = page;
-		fmd.modified = false;
-		cachePageContents[page] = fmd;
-		
-		// Set pkCache and flagCache entries for page loaded page to NOT_SET.
-		// This causes the primary key and flag values to be lazy de-serialised.
-		int rowsPerFileL = rowsPerFile;
-		int destPos = page * rowsPerFileL;
-		System.arraycopy(pkCacheEraser, 0, pkCache, destPos, rowsPerFileL);
-		System.arraycopy(flagCacheEraser, 0, flagCache, destPos, rowsPerFileL);
-	}
-	
 	private final void combine(int page, FileMetadata toCombineFMD, FileMetadata targetFMD, boolean isFront) throws IOException
 	{
 		// ensure frontFMD is cached
 		if(!targetFMD.cached)
 		{
-			// free a different page in the cache without attempting to combine
-			int pageToForceFree = chooseLRUExcluding(page);
-			FileMetadata fileToForceFree = cachePageContents[pageToForceFree];
-			freeCachePageNoCombine(pageToForceFree, fileToForceFree);
-
-			// cache the file associated with frontFMD in the 
-			fillCachePage(pageToForceFree, targetFMD);
+			fetchIntoCacheIgnoringTheCachePage(targetFMD, page);
 		}
 
 		// Execute code specific to front or back combination
@@ -660,6 +654,43 @@ public class Table {
 		int destPos4	= srcPos2;
 		System.arraycopy(pkCacheL, srcPos4, pkCacheL, destPos4, toCombineFMDRows );
 		System.arraycopy(flagCacheL, srcPos4, flagCacheL, destPos4, toCombineFMDRows );	
+	}
+	
+	/** Fills a given cache page reading the file referenced by its FileMetadata fmd argument from disk. The page must be made free before this method is called. */
+	private final void fillCachePage(int page, FileMetadata fmd) throws IOException
+	{
+		File f = new File(fmd.filename);
+		FileInputStream fis = new FileInputStream(f);
+		int bytesToRead = tableWidth * fmd.rows;
+		int readByteCount = fis.read(cache, (page * fileSize), bytesToRead);
+		if(readByteCount != bytesToRead) throw new IOException("Table " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename);
+		fis.close();
+		fmd.cached = true;
+		fmd.cacheIndex = page;
+		fmd.modified = false;
+		cachePageContents[page] = fmd;
+		
+		// Set pkCache and flagCache entries for page loaded page to NOT_SET.
+		// This causes the primary key and flag values to be lazy de-serialised.
+		int rowsPerFileL = rowsPerFile;
+		int destPos = page * rowsPerFileL;
+		System.arraycopy(pkCacheEraser, 0, pkCache, destPos, rowsPerFileL);
+		System.arraycopy(flagCacheEraser, 0, flagCache, destPos, rowsPerFileL);
+	}
+	
+	/** Fetches a given file into the cache, returning the cache page that it was fetched into. It is forbidden from using cache page given in the argument pageToExclude. 
+	 * It also does not attempt to combine the flushed caches contents with its neighbours. This method is really of special use while combining and splitting files. 
+	 * The fetchIntoCache method provides a more general implementation for loading files into the cache. */	
+	private final int fetchIntoCacheIgnoringTheCachePage(final FileMetadata toLoad, final int pageToExclude) throws IOException
+	{
+		// free a different page in the cache without attempting to combine
+		int pageToForceFree = chooseLRUExcluding(pageToExclude);
+		FileMetadata fileToForceFree = cachePageContents[pageToForceFree];
+		freeCachePageNoCombine(pageToForceFree, fileToForceFree);
+	
+		// cache the file associated with toSave
+		fillCachePage(pageToForceFree, toLoad);
+		return pageToForceFree;
 	}
 	
 	/** Find the LRU cache page, other than the page given */
