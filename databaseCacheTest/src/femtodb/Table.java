@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import femtodbexceptions.InvalidValueException;
+import femtodbexceptions.RowOverwriteException;
 
 public class Table {
 	static final int 	DEFAULT_FILE_SIZE_IN_BYTES				= 3000;
@@ -128,6 +129,140 @@ public class Table {
 		addLongColumn(primaryKeyName);
 		addShortColumn("femto_db_status");
 	}
+
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+	//                COLUMN ADDING METHODS
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+	
+	/** Adds a byte column to the table */
+	final void addByteColumn(String columnName)
+	{
+		if(tableIsOperational) return;
+		columnNames = addToArray(columnNames, columnName);
+		columnByteOffset = addToArray(columnByteOffset,tableWidth);
+		columnByteWidth = addToArray(columnByteWidth,1);
+		tableWidth++;
+	}
+	
+	/** Adds a Boolean column to the table, its true width is one byte */
+	final void addBooleanColumn(String columnName)
+	{
+		if(tableIsOperational) return;
+		columnNames = addToArray(columnNames, columnName);
+		columnByteOffset = addToArray(columnByteOffset,tableWidth);
+		columnByteWidth = addToArray(columnByteWidth,1);
+		tableWidth++;
+	}
+	
+	/** Adds a byte array column to the table, its true width is width + 4 bytes to encode length*/
+	final void addBytesColumn(String columnName, int width) 
+	{
+		if(tableIsOperational) return;
+		columnNames = addToArray(columnNames, columnName);
+		columnByteOffset = addToArray(columnByteOffset,tableWidth);
+		int trueWidth = 4 + width;
+		columnByteWidth = addToArray(columnByteWidth,trueWidth);
+		tableWidth += trueWidth;
+	}
+	
+	/** Adds a Short column to the table, its true width is 2 bytes */
+	final void addShortColumn(String columnName)
+	{
+		if(tableIsOperational)return;
+		columnNames = addToArray(columnNames, columnName);
+		columnByteOffset = addToArray(columnByteOffset,tableWidth);
+		columnByteWidth = addToArray(columnByteWidth,2);
+		tableWidth += 2;
+	}
+	
+	/** Adds a Character column to the table, its true width is 2 bytes */
+	final void addCharColumn(String columnName)
+	{
+		if(tableIsOperational)return;
+		columnNames = addToArray(columnNames, columnName);
+		columnByteOffset = addToArray(columnByteOffset,tableWidth);
+		columnByteWidth = addToArray(columnByteWidth,2);
+		tableWidth += 2;
+	}
+	
+	/** Adds a Integer column to the table, its true width is 2 bytes */
+	final void addIntegerColumn(String columnName)
+	{
+		if(tableIsOperational)return;
+		columnNames = addToArray(columnNames, columnName);
+		columnByteOffset = addToArray(columnByteOffset,tableWidth);
+		columnByteWidth = addToArray(columnByteWidth,4);
+		tableWidth += 4;
+	}
+	
+	/** Adds a Long column to the table, its true width is 2 bytes */
+	final void addLongColumn(String columnName)
+	{
+		if(tableIsOperational) return;
+		columnNames = addToArray(columnNames, columnName);
+		columnByteOffset = addToArray(columnByteOffset,tableWidth);
+		columnByteWidth = addToArray(columnByteWidth,8);
+		tableWidth += 8;
+	}
+	
+	/** Adds a Float column to the table, its true width is 2 bytes */
+	final void addFloatColumn(String columnName)
+	{
+		if(tableIsOperational) return;
+		columnNames = addToArray(columnNames, columnName);
+		columnByteOffset = addToArray(columnByteOffset,tableWidth);
+		columnByteWidth = addToArray(columnByteWidth,4);
+		tableWidth += 4;
+	}
+	
+	/** Adds a Double column to the table, its true width is 2 bytes */
+	final void addDoubleColumn(String columnName) 
+	{
+		if(tableIsOperational) return;
+		columnNames = addToArray(columnNames, columnName);
+		columnByteOffset = addToArray(columnByteOffset,tableWidth);
+		columnByteWidth = addToArray(columnByteWidth,8);
+		tableWidth += 8;
+	}
+	
+	/** Adds a Char array column to the table, its true width is width + 2 bytes to encode length*/
+	final void addCharsColumn(String columnName, int width)
+	{
+		if(tableIsOperational) return;
+		columnNames = addToArray(columnNames, columnName);
+		columnByteOffset = addToArray(columnByteOffset,tableWidth);
+		int trueWidth = 2 + width;
+		columnByteWidth = addToArray(columnByteWidth,trueWidth);
+		tableWidth += trueWidth;
+	}
+	
+	/** Adds a String column to the table, its true width is width + 2 bytes, to encode the length. It is important to note the string gets stored in modified UTF format so the available width in characters may be less than the width parameter */
+	final void addStringColumn(String columnName, int width) 
+	{
+		if(tableIsOperational) return;
+		columnNames = addToArray(columnNames, columnName);
+		columnByteOffset = addToArray(columnByteOffset,tableWidth);
+		int trueWidth = 2 + width;
+		columnByteWidth = addToArray(columnByteWidth,trueWidth);
+		tableWidth += trueWidth;
+	}
+	
+	//******************************************************
+	//******************************************************
+	//         END OF COLUMN ADDING METHODS
+	//******************************************************
+	//******************************************************
+
+	
+	
+	
+	
+	
+	
 	
 	//*******************************************************************
 	//*******************************************************************
@@ -136,6 +271,7 @@ public class Table {
 	//*******************************************************************
 	//*******************************************************************
 	//*******************************************************************	
+
 	final void setRowsPerFile(int rows)
 	{
 		if(tableIsOperational) return;
@@ -150,6 +286,11 @@ public class Table {
 		cacheSizeSet = true;
 	}
 	
+	
+	// *********************************************
+	//          MAKE OPERATIONAL
+	// *********************************************
+	/** Allocates memory and creates first file making the table operational */
 	final void makeOperational()throws InvalidValueException, IOException
 	{
 		if(tableIsOperational) return;
@@ -301,138 +442,27 @@ public class Table {
 		// This is needed in case a shutdown-restart happens before
 		// the first entry gets inserted in the table.
 		freeCachePageNoCombine(0, fileMetadata.get(0));
-	}
-
-	//*******************************************************************
-	//*******************************************************************
-	//*******************************************************************
-	//                COLUMN ADDING METHODS
-	//*******************************************************************
-	//*******************************************************************
-	//*******************************************************************
-	
-	/** Adds a byte column to the table */
-	final void addByteColumn(String columnName)
-	{
-		if(tableIsOperational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,1);
-		tableWidth++;
-	}
-	
-	/** Adds a Boolean column to the table, its true width is one byte */
-	final void addBooleanColumn(String columnName)
-	{
-		if(tableIsOperational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,1);
-		tableWidth++;
-	}
-	
-	/** Adds a byte array column to the table, its true width is width + 4 bytes to encode length*/
-	final void addBytesColumn(String columnName, int width) 
-	{
-		if(tableIsOperational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		int trueWidth = 4 + width;
-		columnByteWidth = addToArray(columnByteWidth,trueWidth);
-		tableWidth += trueWidth;
-	}
-	
-	/** Adds a Short column to the table, its true width is 2 bytes */
-	final void addShortColumn(String columnName)
-	{
-		if(tableIsOperational)return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,2);
-		tableWidth += 2;
-	}
-	
-	/** Adds a Character column to the table, its true width is 2 bytes */
-	final void addCharColumn(String columnName)
-	{
-		if(tableIsOperational)return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,2);
-		tableWidth += 2;
-	}
-	
-	/** Adds a Integer column to the table, its true width is 2 bytes */
-	final void addIntegerColumn(String columnName)
-	{
-		if(tableIsOperational)return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,4);
-		tableWidth += 4;
-	}
-	
-	/** Adds a Long column to the table, its true width is 2 bytes */
-	final void addLongColumn(String columnName)
-	{
-		if(tableIsOperational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,8);
-		tableWidth += 8;
-	}
-	
-	/** Adds a Float column to the table, its true width is 2 bytes */
-	final void addFloatColumn(String columnName)
-	{
-		if(tableIsOperational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,4);
-		tableWidth += 4;
-	}
-	
-	/** Adds a Double column to the table, its true width is 2 bytes */
-	final void addDoubleColumn(String columnName) 
-	{
-		if(tableIsOperational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,8);
-		tableWidth += 8;
-	}
-	
-	/** Adds a Char array column to the table, its true width is width + 2 bytes to encode length*/
-	final void addCharsColumn(String columnName, int width)
-	{
-		if(tableIsOperational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		int trueWidth = 2 + width;
-		columnByteWidth = addToArray(columnByteWidth,trueWidth);
-		tableWidth += trueWidth;
-	}
-	
-	/** Adds a String column to the table, its true width is width + 2 bytes, to encode the length. It is important to note the string gets stored in modified UTF format so the available width in characters may be less than the width parameter */
-	final void addStringColumn(String columnName, int width) 
-	{
-		if(tableIsOperational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		int trueWidth = 2 + width;
-		columnByteWidth = addToArray(columnByteWidth,trueWidth);
-		tableWidth += trueWidth;
-	}
+	}	
 	
 	//*******************************************************************
 	//*******************************************************************
 	//*******************************************************************
-	//                PRIVATE METHODS
+	//     END OF TABLE MAKE OPERATIONAL METHODS
 	//*******************************************************************
 	//*******************************************************************
-	//*******************************************************************
+	//*******************************************************************	
 	
-	//*****************************************************************
+	
+	
+	
+	
+	
+	//******************************************************
+	//******************************************************
+	//         START OF LOADING / FREEING /COMBINING CODE
+	//******************************************************
+	//******************************************************
+	
 	 /**
 	 * The main function used by the table for fetching a required file into the cache. It finds the LRU page in the cache, frees it, then uses that page to load the requested file.
 	 * @param toLoad		A FileMetadata object indicating which file to load into the cache.
@@ -441,7 +471,7 @@ public class Table {
 	 * @throws IOException	Thrown if there was a problem flushing the LRU cache page, or loading the requested file.
 	 */
 	private final int fetchIntoCache(final FileMetadata toLoad, final boolean allowCombine) throws IOException
-	{
+	{		
 		// free a different page in the cache without attempting to combine
 		int pageToForceFree = chooseLRU();
 		freeCachePage(pageToForceFree,allowCombine);
@@ -749,6 +779,22 @@ public class Table {
 		return retval;
 	}
 	
+	//******************************************************
+	//******************************************************
+	//         END OF LOADING / FREEING /COMBINING CODE
+	//******************************************************
+	//******************************************************
+
+	
+	
+	
+	
+	//******************************************************
+	//******************************************************
+	//         SPLITTING CODE
+	//******************************************************
+	//******************************************************	
+
 	/** Called when a page being flushed is completely full and must be split, generating a new file */
 	private final void splitAndSavePage(int page, FileMetadata fmd) throws IOException
 	{
@@ -789,10 +835,179 @@ public class Table {
 		fos.flush();
 		fos.close();
 		
+		//TODO ensure the pkCache and flagCache for the chopped off rows are set to  NOT_SET
+		
 		// recursive call to save fmd again... should execute without splitting
 		freeCachePageNoCombine(page, fmd);		
 	}
 	
+	//******************************************************
+	//******************************************************
+	//         END OF SPLITTING CODE
+	//******************************************************
+	//******************************************************	
+
+	
+	
+	
+	
+	
+	//******************************************************
+	//******************************************************
+	//         START OF PRIMARY KEY SEARCHING CODE
+	//******************************************************
+	//******************************************************	
+	final boolean insertByPrimaryKey(long primaryKey, byte[] toInsert) throws IOException
+	{
+		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
+		
+		// ensure the file containing the range the primary key falls in is loaded into the cache
+		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
+		int page = 0;
+		if(fmd.cached)
+		{
+			page = fmd.cacheIndex;
+		}
+		else
+		{
+			page = fetchIntoCache(fmd, true);
+		}
+		int insertRow = 0;
+		
+		if(fmd.rows != 0)
+		{
+			insertRow = primaryKeyBinarySearch(page, primaryKey, true,true);		
+			if(insertRow == -1)return false;
+		}
+		
+		//TODO optimise 
+		
+		// make room for insert in pkCache and flagCache
+		int srcPos1 = page * rowsPerFile + insertRow;
+		System.arraycopy(pkCache, srcPos1, pkCache, srcPos1, (fmd.rows - insertRow) );
+		System.arraycopy(flagCache, srcPos1, flagCache, srcPos1, (fmd.rows - insertRow) );
+		
+		// make room for insert in the cache
+		int srcPos2 = page * fileSize + insertRow * tableWidth;
+		System.arraycopy(cache, srcPos2, cache, (srcPos2 + tableWidth), (fmd.rows - insertRow) * tableWidth);
+
+		//TODO insert the bytes into cache and pk into pkCache , set flagCache entry to not set
+		return true;
+	}	
+	
+	final byte[] seekByPrimaryKey(long primaryKey) throws IOException
+	{
+		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
+		
+		// ensure the file containing the range the primary key falls in is loaded into the cache
+		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
+		int page = 0;
+		if(fmd.cached)
+		{
+			page = fmd.cacheIndex;
+		}
+		else
+		{
+			page = fetchIntoCache(fmd, true);
+		}
+		
+		if(fmd.rows == 0)return null;	// empty table!		
+		int row = primaryKeyBinarySearch(page, primaryKey, false, false);
+		if(row == -1)return null;		// primary key not found
+		byte[] retval = new byte[tableWidth];
+		int srcPos = page * rowsPerFile + row;	
+		System.arraycopy(cache, srcPos, retval, 0, tableWidth);
+		return retval;
+	}
+	
+	/** Returns the fileMetadata list index for a FileMetadata object that contains the given primary key */ 
+	final int fileMetadataBinarySearch(final long primaryKey)
+	{
+		final List<FileMetadata> treeL = fileMetadata;
+		int minIndex 	= 0;
+		int maxIndex 	= treeL.size();
+		
+		int testIndex 	= (maxIndex + minIndex) >> 1;
+		FileMetadata bte = treeL.get(testIndex);
+		boolean toBig 	= (primaryKey < bte.lowerBound);
+		boolean toSmall = (primaryKey >= bte.upperBound);
+		
+		while(toBig||toSmall)
+		{
+			if(toBig)
+			{
+				maxIndex = testIndex;		
+			}
+			else
+			{
+				minIndex = testIndex;
+			}
+			testIndex 	= (maxIndex + minIndex) >> 1;
+			bte 		= treeL.get(testIndex);
+			toBig 		= (primaryKey < bte.lowerBound);
+			toSmall 	= (primaryKey >= bte.upperBound);	
+		}
+		return testIndex;		
+	}
+	
+	/** Returns the cache index for a given primary key. Requires the index for the containing file in the fileMetadata list. */
+	final int primaryKeyBinarySearch(final int page, final long primaryKey, boolean forInsert, boolean overwritePrevention)
+	{
+		FileMetadata fmd = cacheContents[page];
+		
+		int minIndex = 0;
+		int maxIndex = fmd.rows;
+		
+		int testIndex 	= (maxIndex + minIndex) >> 1;
+		long testPK 	= getPrimaryKeyForCacheRow(page, testIndex);
+		boolean toBig 	= (primaryKey < testPK);
+		boolean toSmall = (primaryKey > testPK);
+		
+		while( toBig || toSmall )
+		{
+			if(toBig)
+			{
+				maxIndex = testIndex;		
+			}
+			else
+			{
+				minIndex = testIndex;
+			}
+			testIndex 	= (maxIndex + minIndex) >> 1;
+			if(testIndex == minIndex)
+			{
+				// we stopped moving!
+				if(forInsert){return testIndex;}else{return -1;}
+			}
+			testPK 		= getPrimaryKeyForCacheRow(page, testIndex);
+			toBig 	= (primaryKey < testPK);
+			toSmall = (primaryKey > testPK);
+		}
+		if(overwritePrevention)return -1;
+		return testIndex;		
+	}
+	
+	
+	//******************************************************
+	//******************************************************
+	//         END OF PRIMARY KEY SEARCHING CODE
+	//******************************************************
+	//******************************************************	
+	
+	
+	
+	
+	
+	
+	
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+	//                SEVERAL PRIVATE METHODS
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+
 	private long getPrimaryKeyForCacheRow(int page,int row)
 	{
 		// try the pkCache
@@ -829,6 +1044,19 @@ public class Table {
 	private long nextFilenumber() {
 		return nextFileNumber++;
 	}
+	
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+	//         END OF VARIOUS PRIVATE METHODS
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+	
+	
+	
+	
+	
 	
 	//*******************************************************************
 	//*******************************************************************

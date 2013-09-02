@@ -7,6 +7,7 @@ public class FemtoDBException extends Exception {
 	public static final int STRING_EXCEEDS_COLUMN_SIZE 			= 2;
 	public static final int ALTERING_OPERATIONAL_TABLE 			= 3;
 	public static final int INVALID_VALUE			 			= 4;
+	public static final int ROW_OVERWRITE						= 5;
 	
 	int subType = 0;
 	FemtoDBException(int subtype){super();subType = subtype;}
