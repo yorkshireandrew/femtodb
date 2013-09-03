@@ -857,6 +857,7 @@ public class Table {
 	//******************************************************	
 	final boolean insertByPrimaryKey(long primaryKey, byte[] toInsert, long serviceNumber) throws IOException
 	{
+		// TODO deal with case of primaryKey exceeding largest PK in list. binary search wont get it
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
 		
 		// ensure the file containing the range the primary key falls in is loaded into the cache
@@ -939,7 +940,7 @@ public class Table {
 	}
 	
 	/** Returns the fileMetadata list index for a FileMetadata object that contains the given primary key */ 
-	final int fileMetadataBinarySearch(final long primaryKey)
+	private final int fileMetadataBinarySearch(final long primaryKey)
 	{
 		final List<FileMetadata> treeL = fileMetadata;
 		int minIndex 	= 0;
@@ -969,7 +970,7 @@ public class Table {
 	}
 	
 	/** Returns the cache index for a given primary key. Requires the index for the containing file in the fileMetadata list. */
-	final int primaryKeyBinarySearch(final int page, final long primaryKey, boolean forInsert, boolean overwritePrevention)
+	private final int primaryKeyBinarySearch(final int page, final long primaryKey, boolean forInsert, boolean overwritePrevention)
 	{
 		FileMetadata fmd = cacheContents[page];
 		
@@ -1074,6 +1075,112 @@ public class Table {
 	
 	
 	
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+	//         METHODS FOR TEST AND DEBUG
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+	
+	public String toString()
+	{
+		String retval = "";
+		retval = retval + "name: " 			+ name + "\n";
+		retval = retval + "tableNumber: " 	+ tableNumber + "\n";
+		retval = retval + "fileSize: " 		+ fileSize + "\n";
+		retval = retval + "rowsPerFile: " 	+ rowsPerFile + "\n";
+		retval = retval + "removeOccupancyRatio: " 	+ removeOccupancyRatio + "\n";
+		retval = retval + "removeOccupancy: " 		+ removeOccupancy + "\n";
+		retval = retval + "combineOccupancyRatio: " + combineOccupancyRatio + "\n";
+		retval = retval + "combineOccupancy: " 		+ combineOccupancy + "\n";
+		retval = retval + "nextFileNumber: " 		+ nextFileNumber + "\n";
+		retval = retval + "cacheSize: " + cacheSize + "\n";
+		retval = retval + "cachePages: " + cachePages + "\n";
+		int len = columnNames.length;
+		retval = retval + ".......\n";
+		for(int x = 0 ; x < len; x++)
+		{
+			retval = retval + columnNames[x] + " off=" + columnByteOffset[x] + " wid=" + columnByteWidth[x] + "\n";
+ 		}
+		retval = retval + "tableWidth: " + tableWidth + "\n";
+		retval = retval + ".......\n";
+		
+		retval = retval + "******** File Metadata ****** \n";
+		int len2 = fileMetadata.size();
+		for(int y = 0; y < len2; y++)
+		{
+			retval = retval + " - - - - - - - - - - - -  \n";
+			retval = retval + fileMetadata.get(y).toString() + "\n";
+			retval = retval + " - - - - - - - - - - - -  \n";
+		}
+		
+		retval = retval + "******** Cache contents ****** \n";
+		
+		for(int z = 0; z < cachePages; z++)
+		{
+			retval = retval + Integer.toString(z) + "   ";
+			FileMetadata f = cacheContents[z];
+			if(f == null){retval = retval + "null\n";}else{retval = retval + f.filenumber + "\n";}
+		}
+		retval = retval + "******************************** \n";
+		retval = retval + "******************************** \n";
+		return retval;
+	}
+
+	public String cacheToString()
+	{
+		int cachePagesL 	= cachePages;
+		int rowsPerFileL 	= rowsPerFile;
+		int fileSizeL 		= fileSize;
+		int tableWidthL 	= tableWidth;
+		String retval = "";
+		for(int page = 0; page < cachePagesL; page ++)
+		{
+			retval = retval + "=========== page " + page + " =================== \n";
+			for(int row = 0; row < rowsPerFile; row++)
+			{
+				int pkCacheRow = page * rowsPerFileL + row;
+				retval = retval + fwid(Long.toString(pkCache[pkCacheRow]),20) + "|";
+				retval = retval + fwid(Short.toString(flagCache[pkCacheRow]),6) + "|";
+				int cacheIndex = page * fileSizeL + row * tableWidthL;
+				retval = retval + bytesToString(cache, cacheIndex, tableWidth);
+				retval = retval + "\n";
+			}
+		}
+		long l= Long.MIN_VALUE;
+		return retval;
+	}
+	
+	private String fwid(String in, int len)
+	{
+		int inlen = in.length();
+		String retval = "";
+		int toAdd = len - inlen;
+		if (toAdd > 0)
+		{
+			for(int y = 0; y < toAdd; y++) retval = retval + " ";
+		}
+		retval = retval + in;
+		return retval;
+	}
+	
+	private String bytesToString(byte[] bytes, int offset, int length)
+	{
+		String hex = "0123456789ABCDEF";
+		String retval = "";
+		for(int x = 0; x < length; x++)
+		{
+			int index = offset + x;
+			int i = (int)bytes[index];
+			int ms_nibble = i >> 4;
+			retval = retval + hex.charAt(ms_nibble);
+			int ls_nibble = i % 15;
+			retval = retval + hex.charAt(ls_nibble);
+			retval = retval + " ";	
+		}
+		return retval;
+	}
 	
 	
 	//*******************************************************************

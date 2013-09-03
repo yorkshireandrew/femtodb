@@ -60,4 +60,21 @@ public class FileMetadata {
 				File.pathSeparator + 
 				Long.toString(filenumber);	
 	}
+	
+	@Override
+	public String toString()
+	{
+		String retval = "";
+		retval = retval + "filename: " + filename + "\n";
+		retval = retval + "lower bound: " + lowerBound + "\n";
+		retval = retval + "upper bound: " + upperBound + "\n";
+		retval = retval + "smallest PK: " + smallestPK + "\n";
+		retval = retval + "largest PK: " + largestPK + "\n";
+		retval = retval + "cached: " + cached + "\n";
+		retval = retval + "cache Index: " + cacheIndex + "\n";
+		retval = retval + "rows: " + rows + "\n";
+		retval = retval + "modificationServiceNumber: " + modificationServiceNumber + "\n";
+		retval = retval + "lastUsedServiceNumber: " + lastUsedServiceNumber;
+		return retval;	
+	}
 }
