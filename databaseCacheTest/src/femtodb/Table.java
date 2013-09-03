@@ -834,9 +834,7 @@ public class Table {
 		fos.write(cache, (page * fileSize) + (newRowsInFirst * tableWidth), (newRowsInSecond * tableWidth));
 		fos.flush();
 		fos.close();
-		
-		//TODO ensure the pkCache and flagCache for the chopped off rows are set to  NOT_SET
-		
+				
 		// recursive call to save fmd again... should execute without splitting
 		freeCachePageNoCombine(page, fmd);		
 	}
@@ -857,12 +855,13 @@ public class Table {
 	//         START OF PRIMARY KEY SEARCHING CODE
 	//******************************************************
 	//******************************************************	
-	final boolean insertByPrimaryKey(long primaryKey, byte[] toInsert) throws IOException
+	final boolean insertByPrimaryKey(long primaryKey, byte[] toInsert, long serviceNumber) throws IOException
 	{
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
 		
 		// ensure the file containing the range the primary key falls in is loaded into the cache
-		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
+		FileMetadata fmd 	= fileMetadata.get(fileMetadataListIndex);
+		int fmdRows 		= fmd.rows;
 		int page = 0;
 		if(fmd.cached)
 		{
@@ -874,28 +873,45 @@ public class Table {
 		}
 		int insertRow = 0;
 		
-		if(fmd.rows != 0)
+		if(fmdRows != 0)
 		{
 			insertRow = primaryKeyBinarySearch(page, primaryKey, true,true);		
 			if(insertRow == -1)return false;
 		}
 		
-		//TODO optimise 
+		// localise for speed
+		byte[]	cacheL		= cache;
+		long[] 	pkCacheL 	= pkCache;
+		short[] flagCacheL 	= flagCache;
+		int 	tableWidthL = tableWidth;
+		int 	pkCachePageStart = page * rowsPerFile;
+		int		cachePageStart = page * fileSize;
 		
-		// make room for insert in pkCache and flagCache
-		int srcPos1 = page * rowsPerFile + insertRow;
-		System.arraycopy(pkCache, srcPos1, pkCache, srcPos1, (fmd.rows - insertRow) );
-		System.arraycopy(flagCache, srcPos1, flagCache, srcPos1, (fmd.rows - insertRow) );
+		// make room for insert into pkCache and flagCache
+		int srcPos1 		= pkCachePageStart + insertRow;
+		System.arraycopy(pkCacheL, srcPos1, pkCacheL, srcPos1, (fmdRows - insertRow) );
+		System.arraycopy(flagCacheL, srcPos1, flagCacheL, srcPos1, (fmdRows - insertRow) );
 		
-		// make room for insert in the cache
-		int srcPos2 = page * fileSize + insertRow * tableWidth;
-		System.arraycopy(cache, srcPos2, cache, (srcPos2 + tableWidth), (fmd.rows - insertRow) * tableWidth);
+		// make room for insert into the cache
+		int srcPos2 		= cachePageStart + insertRow * tableWidthL;
+		System.arraycopy(cacheL, srcPos2, cacheL, (srcPos2 + tableWidthL), (fmdRows - insertRow) * tableWidthL);
 
-		//TODO insert the bytes into cache and pk into pkCache , set flagCache entry to not set
+		// perform the insert
+		pkCacheL[srcPos1] 	= primaryKey;
+		flagCacheL[srcPos1]	= FLAG_CACHE_NOT_SET;
+		System.arraycopy(toInsert, 0, cacheL, srcPos2, tableWidthL);
+		
+		// update file meta data
+		if(primaryKey > fmd.largestPK)fmd.largestPK 	= primaryKey;
+		if(primaryKey < fmd.smallestPK)fmd.smallestPK 	= primaryKey;
+		fmd.lastUsedServiceNumber 		= serviceNumber;
+		fmd.modificationServiceNumber 	= serviceNumber;
+		fmd.modified					= true;
+		fmd.rows++;
 		return true;
 	}	
 	
-	final byte[] seekByPrimaryKey(long primaryKey) throws IOException
+	final byte[] seekByPrimaryKey(long primaryKey, long serviceNumber) throws IOException
 	{
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
 		
@@ -915,8 +931,10 @@ public class Table {
 		int row = primaryKeyBinarySearch(page, primaryKey, false, false);
 		if(row == -1)return null;		// primary key not found
 		byte[] retval = new byte[tableWidth];
-		int srcPos = page * rowsPerFile + row;	
+		
+		int srcPos = page * fileSize + row * tableWidth;	
 		System.arraycopy(cache, srcPos, retval, 0, tableWidth);
+		fmd.lastUsedServiceNumber 		= serviceNumber;
 		return retval;
 	}
 	
