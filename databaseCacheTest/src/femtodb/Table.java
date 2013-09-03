@@ -9,7 +9,6 @@ import java.util.Arrays;
 import java.util.List;
 
 import femtodbexceptions.InvalidValueException;
-import femtodbexceptions.RowOverwriteException;
 
 public class Table {
 	static final int 	DEFAULT_FILE_SIZE_IN_BYTES				= 3000;
@@ -577,9 +576,7 @@ public class Table {
 	
 	/** Free's a given cache page writing its contents to disk. Gets called by freeCachePage directly or indirectly*/
 	private final void freeCachePageNoCombine(int page, FileMetadata fmd) throws IOException
-	{
-		if(fmd.rows == rowsPerFile)splitAndSavePage(page, fmd);
-		
+	{	
 		File f = new File(fmd.filename);
 		FileOutputStream fos = new FileOutputStream(f);
 		fos.write(cache, (page * fileSize), (tableWidth * fmd.rows));
@@ -795,8 +792,8 @@ public class Table {
 	//******************************************************
 	//******************************************************	
 
-	/** Called when a page being flushed is completely full and must be split, generating a new file */
-	private final void splitAndSavePage(int page, FileMetadata fmd) throws IOException
+	/** Called when a page becomes full. It is split in half generating a new file and fileMetadata entry. */
+	private final void split(int page, FileMetadata fmd) throws IOException
 	{
 		int newRowsInFirst 					= fmd.rows >> 1; // note this is also the index of first row in second
 		int newIndexOfLastRowInFirst 		= newRowsInFirst - 1; 
@@ -833,10 +830,7 @@ public class Table {
 		FileOutputStream fos = new FileOutputStream(f);
 		fos.write(cache, (page * fileSize) + (newRowsInFirst * tableWidth), (newRowsInSecond * tableWidth));
 		fos.flush();
-		fos.close();
-				
-		// recursive call to save fmd again... should execute without splitting
-		freeCachePageNoCombine(page, fmd);		
+		fos.close();	
 	}
 	
 	//******************************************************
@@ -857,12 +851,11 @@ public class Table {
 	//******************************************************	
 	final boolean insertByPrimaryKey(long primaryKey, byte[] toInsert, long serviceNumber) throws IOException
 	{
-		// TODO deal with case of primaryKey exceeding largest PK in list. binary search wont get it
-		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
-		
-		// ensure the file containing the range the primary key falls in is loaded into the cache
-		FileMetadata fmd 	= fileMetadata.get(fileMetadataListIndex);
-		int fmdRows 		= fmd.rows;
+		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
+		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
+		int fmdRows 				= fmd.rows;
+
+		// Ensure the file containing the range the primary key falls in is loaded into the cache
 		int page = 0;
 		if(fmd.cached)
 		{
@@ -872,43 +865,62 @@ public class Table {
 		{
 			page = fetchIntoCache(fmd, true);
 		}
-		int insertRow = 0;
 		
-		if(fmdRows != 0)
+		// handle the special case of an empty table
+		if(fmdRows == 0)
 		{
-			insertRow = primaryKeyBinarySearch(page, primaryKey, true,true);		
-			if(insertRow == -1)return false;
+			insertIntoEmptyPage(primaryKey, toInsert, serviceNumber, page, fmd);
+			return true;
 		}
 		
-		// localise for speed
-		byte[]	cacheL		= cache;
-		long[] 	pkCacheL 	= pkCache;
-		short[] flagCacheL 	= flagCache;
-		int 	tableWidthL = tableWidth;
-		int 	pkCachePageStart = page * rowsPerFile;
-		int		cachePageStart = page * fileSize;
+		// Find the insert point
+		int insertRow = 0;
+		if(primaryKey < fmd.smallestPK)
+		{
+			insertRow = 0;
+		}
+		else
+		{
+			// Find the row immediately preceding the primary key 
+			insertRow = primaryKeyBinarySearch(page, primaryKey, true,true);		
+			if(insertRow == -1)return false; // primary key already in use
+			insertRow++; // we need to start shifting from the next one			
+		}
 		
-		// make room for insert into pkCache and flagCache
-		int srcPos1 		= pkCachePageStart + insertRow;
+		// localise class fields for speed
+		byte[]	cacheL				= cache;
+		long[] 	pkCacheL 			= pkCache;
+		short[] flagCacheL 			= flagCache;
+		int 	tableWidthL 		= tableWidth;
+		
+		// calculate the pages start indexes
+		int 	pkCachePageStart 	= page * rowsPerFile;
+		int		cachePageStart 		= page * fileSize;
+		
+		// make room for the insert into pkCache and flagCache
+		int srcPos1 				= pkCachePageStart + insertRow;
 		System.arraycopy(pkCacheL, srcPos1, pkCacheL, srcPos1, (fmdRows - insertRow) );
 		System.arraycopy(flagCacheL, srcPos1, flagCacheL, srcPos1, (fmdRows - insertRow) );
 		
-		// make room for insert into the cache
-		int srcPos2 		= cachePageStart + insertRow * tableWidthL;
+		// make room for the insert into the cache
+		int srcPos2 				= cachePageStart + insertRow * tableWidthL;
 		System.arraycopy(cacheL, srcPos2, cacheL, (srcPos2 + tableWidthL), (fmdRows - insertRow) * tableWidthL);
 
 		// perform the insert
-		pkCacheL[srcPos1] 	= primaryKey;
-		flagCacheL[srcPos1]	= FLAG_CACHE_NOT_SET;
+		pkCacheL[srcPos1] 			= primaryKey;
+		flagCacheL[srcPos1]			= FLAG_CACHE_NOT_SET;
 		System.arraycopy(toInsert, 0, cacheL, srcPos2, tableWidthL);
 		
 		// update file meta data
-		if(primaryKey > fmd.largestPK)fmd.largestPK 	= primaryKey;
-		if(primaryKey < fmd.smallestPK)fmd.smallestPK 	= primaryKey;
+		if(primaryKey > fmd.largestPK)	fmd.largestPK 	= primaryKey;
+		if(primaryKey < fmd.smallestPK)	fmd.smallestPK 	= primaryKey;
 		fmd.lastUsedServiceNumber 		= serviceNumber;
 		fmd.modificationServiceNumber 	= serviceNumber;
 		fmd.modified					= true;
 		fmd.rows++;
+		
+		// split the file when it is full, so that new inserts cannot cause it to pop !
+		if(fmd.rows == rowsPerFile)split(page, fmd);
 		return true;
 	}	
 	
@@ -939,6 +951,25 @@ public class Table {
 		return retval;
 	}
 	
+	final void insertIntoEmptyPage(long primaryKey, byte[] toInsert, long serviceNumber, int page, FileMetadata fmd) throws IOException
+	{
+		int 	pkCachePageStart 		= page * rowsPerFile;
+		int		cachePageStart 			= page * fileSize;
+		
+		// perform the insert
+		pkCache[pkCachePageStart] 		= primaryKey;
+		flagCache[pkCachePageStart]		= FLAG_CACHE_NOT_SET;
+		System.arraycopy(toInsert, 0, cache, cachePageStart, tableWidth);
+		
+		// update the file meta data
+		fmd.largestPK 					= primaryKey;
+		fmd.smallestPK 					= primaryKey;
+		fmd.lastUsedServiceNumber 		= serviceNumber;
+		fmd.modificationServiceNumber 	= serviceNumber;
+		fmd.modified					= true;
+		fmd.rows++;
+	}
+	
 	/** Returns the fileMetadata list index for a FileMetadata object that contains the given primary key */ 
 	private final int fileMetadataBinarySearch(final long primaryKey)
 	{
@@ -951,7 +982,7 @@ public class Table {
 		boolean toBig 	= (primaryKey < bte.lowerBound);
 		boolean toSmall = (primaryKey >= bte.upperBound);
 		
-		while(toBig||toSmall)
+		while( toBig || toSmall )
 		{
 			if(toBig)
 			{
@@ -1148,7 +1179,6 @@ public class Table {
 				retval = retval + "\n";
 			}
 		}
-		long l= Long.MIN_VALUE;
 		return retval;
 	}
 	
