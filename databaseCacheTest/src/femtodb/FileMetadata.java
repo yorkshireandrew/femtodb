@@ -6,7 +6,7 @@ public class FileMetadata {
 	/** Table */
 	Table				owner;
 	/** Filename. This gets constructed from file number and owner */
-	String				filename;
+	transient String	filename;
 	/** Value used to identify the file on the file system */
 	long 				filenumber;
 	/** Lower bound, indicating the smallest primary key that can be put in this file */
@@ -45,6 +45,7 @@ public class FileMetadata {
 			int rows,
 			long modificationServiceNumber)
 	{
+		this.owner = owner;
 		this.filenumber = filenumber;
 		this.lowerBound = lowerBound;
 		this.upperBound = upperBound;
@@ -54,10 +55,7 @@ public class FileMetadata {
 		this.rows = rows;
 		this.modificationServiceNumber = modificationServiceNumber;
 		
-		filename = owner.database.path + 
-				File.pathSeparator + 
-				Integer.toString(owner.tableNumber) +
-				File.pathSeparator + 
+		filename = owner.getTableDirectory() + File.separator +
 				Long.toString(filenumber);	
 	}
 	

@@ -11,14 +11,14 @@ import java.util.List;
 import femtodbexceptions.InvalidValueException;
 
 public class Table {
-	static final int 	DEFAULT_FILE_SIZE_IN_BYTES				= 3000;
-	static final int 	DEFAULT_CACHE_SIZE_IN_BYTES				= 1000000;
-	static final double	DEFAULT_REMOVE_OCCUPANCY_RATIO			= 0.2;
-	static final double DEFAULT_ALLOW_COMBINE_OCCUPANCY_RATIO  	= 0.9;
-	static final long	NOT_MODIFIED_LRU_BOOST					= 10;
-	static final long	OVER_HALF_FULL_LRU_BOOST				= 5;
-	private static final long  PK_CACHE_NOT_SET 				= Long.MIN_VALUE;
-	private static final short FLAG_CACHE_NOT_SET 				= Short.MIN_VALUE;
+	static final int 			DEFAULT_FILE_SIZE_IN_BYTES				= 3000;
+	static final int 			DEFAULT_CACHE_SIZE_IN_BYTES				= 1000000;
+	static final double			DEFAULT_REMOVE_OCCUPANCY_RATIO			= 0.2;
+	static final double 		DEFAULT_ALLOW_COMBINE_OCCUPANCY_RATIO  	= 0.9;
+	static final long			NOT_MODIFIED_LRU_BOOST					= 10;
+	static final long			OVER_HALF_FULL_LRU_BOOST				= 5;
+	private static final long  	PK_CACHE_NOT_SET 						= Long.MAX_VALUE;
+	private static final short 	FLAG_CACHE_NOT_SET 						= Short.MIN_VALUE;
 	
 	
 	/** The database that contains this table */
@@ -29,6 +29,9 @@ public class Table {
 	
 	/** The table number */
 	int							tableNumber;
+	
+	/** The directory the tables files will be put in. Declared transient so it adapts to operating system seperators */
+	private transient String	tableDirectory;
 	
 	/** The size of the storage files in bytes */
 	private int					fileSize;
@@ -402,9 +405,17 @@ public class Table {
 		// Initialise nextFileNumber for creating unique filenames
 		nextFileNumber = 0;
 		
+		// Create the directory
+		tableDirectory = database.path + File.separator + Integer.toString(tableNumber);
+		File f = new File(tableDirectory);
+		if(f.exists()){System.out.println("directory exists! deleting"); f.delete();}
+		if(!f.mkdir())
+		{
+			throw new IOException("Table " + name + " was unable to create directory " + tableDirectory);
+		}
+		
 		// Fill the fileMetadata with a single entry referring to an empty file 
 		fileMetadata = new ArrayList<FileMetadata>();
-		
 		FileMetadata firstFile = new FileMetadata(
 				this,
 				nextFilenumber(), 
@@ -428,14 +439,6 @@ public class Table {
 		
 		// Finally make firstFile appear to be in the cache by completing a cachePageContents entry
 		cacheContents[0] = firstFile;
-		
-		// make the directory for the tables files to be written to
-		String directory = database.path + File.pathSeparator + Integer.toString(tableNumber);
-		File f = new File(directory);
-		if(!f.mkdir())
-		{
-			throw new IOException("Table " + name + " was unable to create directory " + directory);
-		}
 		
 		// Directly flush the first cache entry to create a file 
 		// This is needed in case a shutdown-restart happens before
@@ -1220,6 +1223,9 @@ public class Table {
 	//*******************************************************************
 	//*******************************************************************
 	//*******************************************************************
+	
+	final String getTableDirectory()
+	{return tableDirectory;}
 	
 	final double getRemoveOccupancyRatio() {
 		return removeOccupancyRatio;
