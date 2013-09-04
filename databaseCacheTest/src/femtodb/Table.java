@@ -408,7 +408,7 @@ public class Table {
 		// Create the directory
 		tableDirectory = database.path + File.separator + Integer.toString(tableNumber);
 		File f = new File(tableDirectory);
-		if(f.exists()){System.out.println("directory exists! deleting"); f.delete();}
+		if(f.exists()){recursiveDelete(f);}
 		if(!f.mkdir())
 		{
 			throw new IOException("Table " + name + " was unable to create directory " + tableDirectory);
@@ -1217,6 +1217,30 @@ public class Table {
 		return nextFileNumber++;
 	}
 	
+	/** Recursively deletes a file or directory */
+	private void recursiveDelete(File f)
+	{
+		if(f != null)
+		{
+			if(f.exists())
+			{
+				if(f.isDirectory())
+				{
+					File[] files = f.listFiles();
+					for(File file: files)
+					{
+						recursiveDelete(file);
+					}
+					f.delete();
+				}
+				else
+				{
+					f.delete();
+				}
+			}
+		}
+	}
+	
 	//*******************************************************************
 	//*******************************************************************
 	//*******************************************************************
@@ -1363,4 +1387,6 @@ public class Table {
 		if(tableIsOperational) return;
 		this.combineOccupancyRatio = combineOccupancyRatio;
 	}
+	
+	
 }
