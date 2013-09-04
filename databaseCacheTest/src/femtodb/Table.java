@@ -591,17 +591,9 @@ public class Table {
 	//******************************************************	
 	
 	/** Attempts to combine the file related to a given cache page into its neighbours, freeing the cache page*/
-	private final void tryToCombine(final int page) throws IOException
-	{
-		FileMetadata cacheToFreeFMD = cacheContents[page];
-		if(cacheToFreeFMD == null)return; // must already be free
-		if(!cacheToFreeFMD.modified)
-		{
-			// The cache page is not modified so we can simply free it off
-			cacheToFreeFMD.cached = false;
-			cacheContents[page] = null;
-			return;
-		}
+	private final void tryToCombine(final int page, FileMetadata cacheToFreeFMD) throws IOException
+	{		
+		// preconditions are the page is loaded in the cache, it is not already set free and it is modified
 		
 		// See if combine is worth taking any further
 		int cacheToFreeFMDRows = cacheToFreeFMD.rows;
@@ -1005,13 +997,101 @@ public class Table {
 	//******************************************************
 	//******************************************************	
 	
+
 	
 	
 	
 	
 	//******************************************************
 	//******************************************************
-	//         START OF PRIMARY KEY SEARCHING CODE
+	//         START OF DELETE ROW CODE
+	//******************************************************
+	//******************************************************	
+	
+	final boolean deletePrimaryKey(long primaryKey, long serviceNumber) throws IOException
+	{
+		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
+		
+		// ensure the file containing the range the primary key falls in is loaded into the cache
+		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
+		int page = 0;
+		if(fmd.cached)
+		{
+			page = fmd.cacheIndex;
+		}
+		else
+		{
+			page = loadFileIntoCache(fmd);
+		}
+		
+		if(fmd.rows == 0)return false;	// empty table!		
+		int row = primaryKeyBinarySearch(page, primaryKey, false, false);
+		if(row == -1)return false;		// primary key not found
+		
+		deleteRow(primaryKey,page,row,serviceNumber);
+		return true;
+	}
+	
+	final void deleteRow(long primaryKey, int page, int row, long serviceNumber) throws IOException
+	{
+		FileMetadata fmd = cacheContents[page];
+		int fmdRows = fmd.rows;
+		
+		if(fmdRows == 1)
+		{
+			// special case of emptying table
+			fmd.smallestPK 	= Long.MIN_VALUE;
+			fmd.largestPK 	= Long.MAX_VALUE;
+		}
+		else
+		{
+			if(primaryKey == fmd.smallestPK)
+			{
+				fmd.smallestPK = getPrimaryKeyForCacheRow(page, (row+1));
+			}
+			if(primaryKey == fmd.largestPK)
+			{
+				fmd.largestPK = getPrimaryKeyForCacheRow(page, (row-1));
+			}
+		}
+		
+		// Shift following pk and flag cache rows up over deleted row
+		int destPos1 = page * rowsPerFile + row;
+		int srcPos1 = destPos1 + 1;
+		int length1 = (fmdRows - 1) - row;
+		System.arraycopy(pkCache, srcPos1, pkCache, destPos1, length1);
+		System.arraycopy(flagCache, srcPos1, flagCache, destPos1, length1);
+		
+		// Shift following cache rows up over deleted row
+		int tableWidthL = tableWidth;
+		int destPos2 = page * fileSize + row * tableWidthL;
+		int srcPos2 = destPos2 + tableWidthL;
+		int length2 = length1 * tableWidthL;
+		System.arraycopy(cache, srcPos2, cache, destPos2, length2);
+		
+		// update the remaining fileMetadata
+		fmd.lastUsedServiceNumber 		= serviceNumber;
+		fmd.modificationServiceNumber 	= serviceNumber;
+		fmd.modified = true;
+		fmd.rows--;
+		
+		// try to combine with neighbours
+		tryToCombine(page,fmd);
+	}
+	
+	//******************************************************
+	//******************************************************
+	//         END OF DELETE ROW CODE
+	//******************************************************
+	//******************************************************	
+	
+	
+	
+	
+	
+	//******************************************************
+	//******************************************************
+	//         START OF GENERIC PRIMARY KEY SEARCHING CODE
 	//******************************************************
 	//******************************************************	
 
@@ -1086,7 +1166,7 @@ public class Table {
 	
 	//******************************************************
 	//******************************************************
-	//         END OF PRIMARY KEY SEARCHING CODE
+	//         END OF GENERIC PRIMARY KEY SEARCHING CODE
 	//******************************************************
 	//******************************************************	
 	
