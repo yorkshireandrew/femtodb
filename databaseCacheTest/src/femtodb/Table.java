@@ -443,7 +443,7 @@ public class Table {
 		// Directly flush the first cache entry to create a file 
 		// This is needed in case a shutdown-restart happens before
 		// the first entry gets inserted in the table.
-		freeCachePageNoCombine(0, fileMetadata.get(0));
+		freeCachePage(0);
 	}	
 	
 	//*******************************************************************
@@ -452,58 +452,161 @@ public class Table {
 	//     END OF TABLE MAKE OPERATIONAL METHODS
 	//*******************************************************************
 	//*******************************************************************
-	//*******************************************************************	
-	
-	
-	
-	
+	//*******************************************************************		
 	
 	
 	//******************************************************
 	//******************************************************
-	//         START OF LOADING / FREEING /COMBINING CODE
+	//      START OF LOADING INTO AND FREEING CACHE CODE
 	//******************************************************
-	//******************************************************
+	//******************************************************	
 	
 	 /**
 	 * The main function used by the table for fetching a required file into the cache. It finds the LRU page in the cache, frees it, then uses that page to load the requested file.
 	 * @param toLoad		A FileMetadata object indicating which file to load into the cache.
-	 * @param allowCombine	When true the method attempts to combine the cached data that was flushed back to disk into neighbouring files. This argument should be set true, unless there is a risk of a cascade of combines occurring. 
 	 * @return 				The cache page the file was loaded into.
 	 * @throws IOException	Thrown if there was a problem flushing the LRU cache page, or loading the requested file.
 	 */
-	private final int fetchIntoCache(final FileMetadata toLoad, final boolean allowCombine) throws IOException
+	private final int loadFileIntoCache(final FileMetadata toLoad) throws IOException
 	{		
 		// free a different page in the cache without attempting to combine
-		int pageToForceFree = chooseLRU();
-		freeCachePage(pageToForceFree,allowCombine);
+		int pageToForceFree = findLRUCachePage();
+		freeCachePage(pageToForceFree);
 	
 		// cache the file associated with toSave
-		loadFileIntoGivenCachePage(pageToForceFree, toLoad);
+		loadFileIntoCachePage(pageToForceFree, toLoad);
 		return pageToForceFree;
 	}
-	// ***********************************************************************************
-
-	/** Ensures a given cache page is made free. If the argument allowCombine is true then the method will attempt to combine the associated file into its neighbours when its occupancy (number of rows) is low. */
-	private final void freeCachePage(final int page, final boolean allowCombine) throws IOException
+	
+	/** Fills a given cache page reading the file referenced by its FileMetadata fmd argument from disk. The page must be made free before this method is called. */
+	private final void loadFileIntoCachePage(int page, FileMetadata fmd) throws IOException
+	{
+		// load the file
+		File f = new File(fmd.filename);
+		FileInputStream fis = new FileInputStream(f);
+		int bytesToRead = tableWidth * fmd.rows;
+		int readByteCount = fis.read(cache, (page * fileSize), bytesToRead);
+		if(readByteCount != bytesToRead) throw new IOException("Table " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename);
+		fis.close();
+		
+		// update fmd
+		fmd.cached = true;
+		fmd.cacheIndex = page;
+		fmd.modified = false;
+		
+		// add to cacheContents
+		cacheContents[page] = fmd;
+		
+		// Set pkCache and flagCache entries for page loaded page to NOT_SET.
+		// This causes the primary key and flag values to be lazy de-serialised.
+		int rowsPerFileL = rowsPerFile;
+		int destPos = page * rowsPerFileL;
+		System.arraycopy(pkCacheEraser, 0, pkCache, destPos, rowsPerFileL);
+		System.arraycopy(flagCacheEraser, 0, flagCache, destPos, rowsPerFileL);
+	}
+	
+	/** Fetches a given file into the cache, returning the cache page that it was fetched into. It is forbidden from using cache page given in the argument pageToExclude. 
+	 * It also does not attempt to combine the flushed caches contents with its neighbours. This method is really of special use while combining and splitting files. 
+	 * The fetchIntoCache method provides a more general implementation for loading files into the cache. */	
+	private final int loadFileIntoCacheIgnoringGivenCachePage(final FileMetadata toLoad, final int pageToExclude) throws IOException
+	{
+		// free a different page in the cache without attempting to combine
+		int pageToForceFree = findLRUCachePageExcludingPage(pageToExclude);
+		freeCachePage(pageToForceFree);
+	
+		// cache the file associated with toSave
+		loadFileIntoCachePage(pageToForceFree, toLoad);
+		return pageToForceFree;
+	}
+	
+	/** Find the LRU cache page, other than the page given */
+	private final int findLRUCachePageExcludingPage(final int pageToExclude)
+	{
+		long bestValueSoFar = Long.MAX_VALUE;
+		int bestCandidateSoFar = -1;
+		int halfOfRowsPerFile = rowsPerFile >> 1;
+		for(int x = 0; x < cachePages; x++)
+		{
+			if(x == pageToExclude)continue;
+			long value = cacheLRURankingAlgorithm(x,halfOfRowsPerFile);
+			if(value < bestValueSoFar){bestCandidateSoFar = x; bestValueSoFar = value;}
+		}
+		return bestCandidateSoFar;
+	}
+	
+	/** Find the LRU cache page */
+	private final int findLRUCachePage()
+	{
+		long bestValueSoFar = Long.MAX_VALUE;
+		int bestCandidateSoFar = -1;
+		int halfOfRowsPerFile = rowsPerFile >> 1;
+		for(int x = 0; x < cachePages; x++)
+		{
+			long value = cacheLRURankingAlgorithm(x,halfOfRowsPerFile);
+			if(value < bestValueSoFar){bestCandidateSoFar = x; bestValueSoFar = value;}
+		}
+		return bestCandidateSoFar;
+	}
+	
+	/** Ranking algorithm used to determine best LRU page in cache to swap out */
+	private final long cacheLRURankingAlgorithm(int page, int halfOfRowsPerFile)
+	{
+		FileMetadata fmd = cacheContents[page];
+		if(fmd == null)return Long.MIN_VALUE; // perfect an unused page :-)
+		long retval = fmd.lastUsedServiceNumber;
+		if(fmd.modified) retval -= NOT_MODIFIED_LRU_BOOST;
+		if(fmd.rows > halfOfRowsPerFile)retval -= OVER_HALF_FULL_LRU_BOOST;
+		return retval;
+	}
+	
+	/** Free's a given cache page writing its contents to disk. */
+	private final void freeCachePage(int page) throws IOException
+	{	
+		FileMetadata fmd = cacheContents[page];
+		if(fmd == null)return; // cache page must already be free
+		File f = new File(fmd.filename);
+		FileOutputStream fos = new FileOutputStream(f);
+		fos.write(cache, (page * fileSize), (tableWidth * fmd.rows));
+		fos.flush();
+		fos.close();	
+		
+		// mark the fmd as not cached and the cachePageContents as now free
+		fmd.cached = false;
+		fmd.cacheIndex = -1;
+		cacheContents[page] = null;
+	}
+	
+	//******************************************************
+	//******************************************************
+	//      END OF LOADING INTO AND FREEING CACHE CODE
+	//******************************************************
+	//******************************************************
+	
+	
+	
+	//******************************************************
+	//******************************************************
+	//         START OF COMBINE CODE
+	//******************************************************
+	//******************************************************	
+	
+	/** Attempts to combine the file related to a given cache page into its neighbours, freeing the cache page*/
+	private final void tryToCombine(final int page) throws IOException
 	{
 		FileMetadata cacheToFreeFMD = cacheContents[page];
-		if(cacheToFreeFMD == null)return;
+		if(cacheToFreeFMD == null)return; // must already be free
 		if(!cacheToFreeFMD.modified)
 		{
+			// The cache page is not modified so we can simply free it off
 			cacheToFreeFMD.cached = false;
 			cacheContents[page] = null;
 			return;
 		}
 		
-		// If we are not combining then simply delegate, making no decisions
+		// See if combine is worth taking any further
 		int cacheToFreeFMDRows = cacheToFreeFMD.rows;
 		int combineOccupancyL = combineOccupancy;
-		if((!allowCombine)||(cacheToFreeFMDRows >= combineOccupancyL))
-		{
-			freeCachePageNoCombine(page, cacheToFreeFMD);
-			return;
-		}
+		if(cacheToFreeFMDRows >= combineOccupancyL)return; // we cannot combine so simply return
 		
 		// Determine what combinations are possible
 		List<FileMetadata> fileMetadataL = fileMetadata;
@@ -535,65 +638,51 @@ public class Table {
 		// choose free-ing action based on what is possible
 		if((!frontCombinePossible)&&(!backCombinePossible))
 		{
-			freeCachePageNoCombine(page,cacheToFreeFMD);
+			freeCachePage(page);
 			return;
 		}
 		
 		if((frontCombinePossible)&&(!backCombinePossible))
 		{
-			combine(page,cacheToFreeFMD,frontFMD,true);
+			combineStage2(page,cacheToFreeFMD,frontFMD,true);
 			return;
 		}
 		
 		if((!frontCombinePossible)&&(backCombinePossible))
 		{
-			combine(page,cacheToFreeFMD,backFMD,false);
+			combineStage2(page,cacheToFreeFMD,backFMD,false);
 			return;
 		}
 		
 		// If we fall through to here both front and back combines must be possible
 		
-		// Combine if one of them is already cached
-		if((frontFMD.cached)&&(!backFMD.cached))
-		{
-			combine(page,cacheToFreeFMD,frontFMD,true);
-			return;			
-		}
-		
-		if((!frontFMD.cached)&&(backFMD.cached))
-		{
-			combine(page,cacheToFreeFMD,backFMD,false);
-			return;			
-		}
+		// Combine favouring which one is already cached
+//		if((frontFMD.cached)&&(!backFMD.cached))
+//		{
+//			combineStage2(page,cacheToFreeFMD,frontFMD,true);
+//			return;			
+//		}
+//		
+//		if((!frontFMD.cached)&&(backFMD.cached))
+//		{
+//			combineStage2(page,cacheToFreeFMD,backFMD,false);
+//			return;			
+//		}
+
 		
 		// Nether are cached so pick shortest
 		if(frontCombinedRows < backCombinedRows)
 		{
-			combine(page,cacheToFreeFMD,frontFMD,true);
+			combineStage2(page,cacheToFreeFMD,frontFMD,true);
 		}
 		else
 		{
-			combine(page,cacheToFreeFMD,backFMD,false);
+			combineStage2(page,cacheToFreeFMD,backFMD,false);
 		}	
 	}
 	
-	/** Free's a given cache page writing its contents to disk. Gets called by freeCachePage directly or indirectly*/
-	private final void freeCachePageNoCombine(int page, FileMetadata fmd) throws IOException
-	{	
-		File f = new File(fmd.filename);
-		FileOutputStream fos = new FileOutputStream(f);
-		fos.write(cache, (page * fileSize), (tableWidth * fmd.rows));
-		fos.flush();
-		fos.close();	
-		
-		// mark the fmd as not cached and the cachePageContents as now free
-		fmd.cached = false;
-		fmd.cacheIndex = -1;
-		cacheContents[page] = null;
-	}
-	
 	/** Combines a given cached file, on a given cache page, into one of its neighbours */
-	private final void combine(int page, FileMetadata toCombineFMD, FileMetadata targetFMD, boolean isFront) throws IOException
+	private final void combineStage2(int page, FileMetadata toCombineFMD, FileMetadata targetFMD, boolean isFront) throws IOException
 	{
 		// ensure targetFMD is cached
 		if(!targetFMD.cached)
@@ -697,106 +786,21 @@ public class Table {
 		System.arraycopy(flagCacheL, srcPos4, flagCacheL, destPos4, toCombineFMDRows );	
 	}
 	
-	/** Fills a given cache page reading the file referenced by its FileMetadata fmd argument from disk. The page must be made free before this method is called. */
-	private final void loadFileIntoGivenCachePage(int page, FileMetadata fmd) throws IOException
-	{
-		// load the file
-		File f = new File(fmd.filename);
-		FileInputStream fis = new FileInputStream(f);
-		int bytesToRead = tableWidth * fmd.rows;
-		int readByteCount = fis.read(cache, (page * fileSize), bytesToRead);
-		if(readByteCount != bytesToRead) throw new IOException("Table " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename);
-		fis.close();
-		
-		// update fmd
-		fmd.cached = true;
-		fmd.cacheIndex = page;
-		fmd.modified = false;
-		
-		// add to cacheContents
-		cacheContents[page] = fmd;
-		
-		// Set pkCache and flagCache entries for page loaded page to NOT_SET.
-		// This causes the primary key and flag values to be lazy de-serialised.
-		int rowsPerFileL = rowsPerFile;
-		int destPos = page * rowsPerFileL;
-		System.arraycopy(pkCacheEraser, 0, pkCache, destPos, rowsPerFileL);
-		System.arraycopy(flagCacheEraser, 0, flagCache, destPos, rowsPerFileL);
-	}
-	
-	/** Fetches a given file into the cache, returning the cache page that it was fetched into. It is forbidden from using cache page given in the argument pageToExclude. 
-	 * It also does not attempt to combine the flushed caches contents with its neighbours. This method is really of special use while combining and splitting files. 
-	 * The fetchIntoCache method provides a more general implementation for loading files into the cache. */	
-	private final int loadFileIntoCacheIgnoringGivenCachePage(final FileMetadata toLoad, final int pageToExclude) throws IOException
-	{
-		// free a different page in the cache without attempting to combine
-		int pageToForceFree = chooseLRUExcluding(pageToExclude);
-		FileMetadata fileToForceFree = cacheContents[pageToForceFree];
-		freeCachePageNoCombine(pageToForceFree, fileToForceFree);
-	
-		// cache the file associated with toSave
-		loadFileIntoGivenCachePage(pageToForceFree, toLoad);
-		return pageToForceFree;
-	}
-	
-	/** Find the LRU cache page, other than the page given */
-	private final int chooseLRUExcluding(final int pageToExclude)
-	{
-		long bestValueSoFar = Long.MAX_VALUE;
-		int bestCandidateSoFar = -1;
-		int halfOfRowsPerFile = rowsPerFile >> 1;
-		for(int x = 0; x < cachePages; x++)
-		{
-			if(x == pageToExclude)continue;
-			long value = cacheLRURankingAlgorithm(x,halfOfRowsPerFile);
-			if(value < bestValueSoFar){bestCandidateSoFar = x; bestValueSoFar = value;}
-		}
-		return bestCandidateSoFar;
-	}
-	
-	/** Find the LRU cache page */
-	private final int chooseLRU()
-	{
-		long bestValueSoFar = Long.MAX_VALUE;
-		int bestCandidateSoFar = -1;
-		int halfOfRowsPerFile = rowsPerFile >> 1;
-		for(int x = 0; x < cachePages; x++)
-		{
-			long value = cacheLRURankingAlgorithm(x,halfOfRowsPerFile);
-			if(value < bestValueSoFar){bestCandidateSoFar = x; bestValueSoFar = value;}
-		}
-		return bestCandidateSoFar;
-	}
-	
-	/** Ranking algorithm used to determine best LRU page in cache to swap out */
-	private final long cacheLRURankingAlgorithm(int page, int halfOfRowsPerFile)
-	{
-		FileMetadata fmd = cacheContents[page];
-		if(fmd == null)return Long.MIN_VALUE; // perfect an unused page :-)
-		long retval = fmd.lastUsedServiceNumber;
-		if(fmd.modified) retval -= NOT_MODIFIED_LRU_BOOST;
-		if(fmd.rows > halfOfRowsPerFile)retval -= OVER_HALF_FULL_LRU_BOOST;
-		return retval;
-	}
-	
 	//******************************************************
 	//******************************************************
-	//         END OF LOADING / FREEING /COMBINING CODE
+	//         END OF COMBINE CODE
 	//******************************************************
-	//******************************************************
-
-	
-	
+	//******************************************************	
 	
 	
 	//******************************************************
 	//******************************************************
-	//         SPLITTING CODE
+	//         START OF SPLITTING CODE
 	//******************************************************
 	//******************************************************	
 
 	/** Called when a page becomes full. It is split in half generating a new file and fileMetadata entry. */
-	private final void split(int page, FileMetadata fmd) throws IOException
+	private final void splitFile(int page, FileMetadata fmd) throws IOException
 	{
 		int newRowsInFirst 					= fmd.rows >> 1; // note this is also the index of first row in second
 		int newIndexOfLastRowInFirst 		= newRowsInFirst - 1; 
@@ -847,11 +851,14 @@ public class Table {
 	
 	
 	
+	
+	
 	//******************************************************
 	//******************************************************
-	//         START OF PRIMARY KEY SEARCHING CODE
+	//         START OF INSERT CODE
 	//******************************************************
 	//******************************************************	
+	
 	final boolean insertByPrimaryKey(long primaryKey, byte[] toInsert, long serviceNumber) throws IOException
 	{
 		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
@@ -866,7 +873,7 @@ public class Table {
 		}
 		else
 		{
-			page = fetchIntoCache(fmd, true);
+			page = loadFileIntoCache(fmd);
 		}
 		
 		// handle the special case of an empty table
@@ -923,36 +930,11 @@ public class Table {
 		fmd.rows++;
 		
 		// split the file when it is full, so that new inserts cannot cause it to pop !
-		if(fmd.rows == rowsPerFile)split(page, fmd);
+		if(fmd.rows == rowsPerFile)splitFile(page, fmd);
 		return true;
 	}	
 	
-	final byte[] seekByPrimaryKey(long primaryKey, long serviceNumber) throws IOException
-	{
-		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
-		
-		// ensure the file containing the range the primary key falls in is loaded into the cache
-		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
-		int page = 0;
-		if(fmd.cached)
-		{
-			page = fmd.cacheIndex;
-		}
-		else
-		{
-			page = fetchIntoCache(fmd, true);
-		}
-		
-		if(fmd.rows == 0)return null;	// empty table!		
-		int row = primaryKeyBinarySearch(page, primaryKey, false, false);
-		if(row == -1)return null;		// primary key not found
-		byte[] retval = new byte[tableWidth];
-		
-		int srcPos = page * fileSize + row * tableWidth;	
-		System.arraycopy(cache, srcPos, retval, 0, tableWidth);
-		fmd.lastUsedServiceNumber 		= serviceNumber;
-		return retval;
-	}
+
 	
 	final void insertIntoEmptyPage(long primaryKey, byte[] toInsert, long serviceNumber, int page, FileMetadata fmd) throws IOException
 	{
@@ -972,6 +954,67 @@ public class Table {
 		fmd.modified					= true;
 		fmd.rows++;
 	}
+	
+	
+	//******************************************************
+	//******************************************************
+	//         END OF INSERT CODE
+	//******************************************************
+	//******************************************************
+	
+	
+	
+	
+
+	//******************************************************
+	//******************************************************
+	//         START OF SEEK CODE
+	//******************************************************
+	//******************************************************	
+	
+	final byte[] seekByPrimaryKey(long primaryKey, long serviceNumber) throws IOException
+	{
+		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
+		
+		// ensure the file containing the range the primary key falls in is loaded into the cache
+		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
+		int page = 0;
+		if(fmd.cached)
+		{
+			page = fmd.cacheIndex;
+		}
+		else
+		{
+			page = loadFileIntoCache(fmd);
+		}
+		
+		if(fmd.rows == 0)return null;	// empty table!		
+		int row = primaryKeyBinarySearch(page, primaryKey, false, false);
+		if(row == -1)return null;		// primary key not found
+		byte[] retval = new byte[tableWidth];
+		
+		int srcPos = page * fileSize + row * tableWidth;	
+		System.arraycopy(cache, srcPos, retval, 0, tableWidth);
+		fmd.lastUsedServiceNumber 		= serviceNumber;
+		return retval;
+	}
+	
+	//******************************************************
+	//******************************************************
+	//         END OF SEEK CODE
+	//******************************************************
+	//******************************************************	
+	
+	
+	
+	
+	
+	//******************************************************
+	//******************************************************
+	//         START OF PRIMARY KEY SEARCHING CODE
+	//******************************************************
+	//******************************************************	
+
 	
 	/** Returns the fileMetadata list index for a FileMetadata object that contains the given primary key */ 
 	private final int fileMetadataBinarySearch(final long primaryKey)
@@ -1046,10 +1089,6 @@ public class Table {
 	//         END OF PRIMARY KEY SEARCHING CODE
 	//******************************************************
 	//******************************************************	
-	
-	
-	
-	
 	
 	
 	
