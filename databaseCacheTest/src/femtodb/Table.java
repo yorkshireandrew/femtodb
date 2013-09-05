@@ -976,8 +976,9 @@ public class Table {
 	
 	final byte[] seekByPrimaryKey(long primaryKey, long serviceNumber) throws IOException
 	{
+		System.out.println("seeking " + primaryKey);
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
-		
+		System.out.println("is in metafile index " + fileMetadataListIndex);
 		// ensure the file containing the range the primary key falls in is loaded into the cache
 		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
 		int page = 0;
@@ -990,9 +991,17 @@ public class Table {
 			page = loadFileIntoCache(fmd);
 		}
 		
-		if(fmd.rows == 0)return null;	// empty table!		
+		if(fmd.rows == 0)
+		{
+				System.out.println("empty table!");
+				return null;	// empty table!		
+		}
 		int row = primaryKeyBinarySearch(page, primaryKey, false, false);
-		if(row == -1)return null;		// primary key not found
+		if(row == -1)
+			{
+				System.out.println("primary key not found!");
+				return null;		// primary key not found
+			}
 		byte[] retval = new byte[tableWidth];
 		
 		int srcPos = page * fileSize + row * tableWidth;	
@@ -1143,12 +1152,15 @@ public class Table {
 		
 		int minIndex = 0;
 		int maxIndex = fmd.rows;
+//		System.out.println("number of rows " + maxIndex);
 		
 		int testIndex 	= (maxIndex + minIndex) >> 1;
+//		System.out.println("test index= " + testIndex);
 		long testPK 	= getPrimaryKeyForCacheRow(page, testIndex);
+//		System.out.println("returned primary key for row " + testPK);
 		boolean toBig 	= (primaryKey < testPK);
 		boolean toSmall = (primaryKey > testPK);
-		
+		long priorIndex = Integer.MIN_VALUE;
 		while( toBig || toSmall )
 		{
 			if(toBig)
@@ -1159,13 +1171,19 @@ public class Table {
 			{
 				minIndex = testIndex;
 			}
+			
 			testIndex 	= (maxIndex + minIndex) >> 1;
-			if(testIndex == minIndex)
+//			System.out.println("test index= " + testIndex);
+			
+			if(testIndex == priorIndex)
 			{
 				// we stopped moving!
 				if(forInsert){return testIndex;}else{return -1;}
 			}
+			priorIndex = testIndex;
+			
 			testPK 		= getPrimaryKeyForCacheRow(page, testIndex);
+			System.out.println("returned primary key for row " + testPK);
 			toBig 	= (primaryKey < testPK);
 			toSmall = (primaryKey > testPK);
 		}
@@ -1195,12 +1213,17 @@ public class Table {
 		// try the pkCache
 		int pkCacheIndex = page * rowsPerFile + row;
 		long pkCacheResult = pkCache[pkCacheIndex];
-		if(pkCacheResult != PK_CACHE_NOT_SET)return pkCacheResult;
+		if(pkCacheResult != PK_CACHE_NOT_SET)
+			{
+//				System.out.println("pkcache res = " + pkCacheResult);
+				return pkCacheResult;
+			}
 		
 		// get from cache bytes
 		int cacheIndex = (page * fileSize) + (tableWidth * row);
 		long deserialisedResult = BuffRead.readLong(cache, cacheIndex);
 		pkCache[pkCacheIndex] = deserialisedResult;
+//		System.out.println("des res = " + deserialisedResult);
 		return deserialisedResult;
 	}
 	

@@ -9,7 +9,7 @@ public class TableDebug1 {
 
 	public static void main(String[] args) {
 		TableDebug1 test = new TableDebug1();
-		test.execute();
+		test.execute2();
 	}
 	
 	void execute()
@@ -81,8 +81,99 @@ public class TableDebug1 {
 			System.out.println(e.toString());
 			e.printStackTrace();
 		}
+	}
+	
+	
+	void execute2()
+	{
+		FemtoDB fdb = new FemtoDB();
+		fdb.path = "debug1";
 		
-		//TODO check combine works
+		// make a fresh directory
+		File f = new File("debug1");
+		if(f.exists())f.delete();
+		f.mkdir();
+		
+		// create the table
+		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		tut.setRowsPerFile(5);
+		tut.setRemoveOccupancyRatio(0.4);
+		tut.setCombineOccupancyRatio(0.8);
+		tut.addIntegerColumn("payload");
+		tut.setCacheSize(140);
+		try {
+			tut.makeOperational();
+			
+			// first insert
+			byte[] toInsert = new byte[8+2+4];
+			
+			// insert a load of stuff
+			for(int x = 1; x < 15; x++)
+			{
+				BuffWrite.writeLong(toInsert, 0, (long)x);
+				BuffWrite.writeShort(toInsert, 8, (10 * x));
+				BuffWrite.writeInt(toInsert, 10, (2 * x));	
+				tut.insertByPrimaryKey((long)x, toInsert, (long)(x+1));
+			}
+			
+			// display table
+			System.out.println(tut);
+			System.out.println(tut.cacheToString());	
+			
+			System.out.println("========= reading back ===========");	
+			// read it back
+			for(int x = 1; x < 15; x++)
+			{
+				toInsert = tut.seekByPrimaryKey((long)x, 1000 + x);
+				if(toInsert == null)System.out.println("" + x + " was null!");
+				System.out.println("read =" + BuffRead.readInt(toInsert, 10));
+			}	
+			
+			// delete it all
+			for(int x = 1; x < 15; x++)
+			{
+				tut.deletePrimaryKey(x, 2000+x);
+			}	
+			
+			System.out.println("finished delete");
+			
+			// display table
+			System.out.println(tut);
+			System.out.println(tut.cacheToString());
+			
+			// insert a load of stuff
+			for(int x = 1; x < 15; x++)
+			{
+				BuffWrite.writeLong(toInsert, 0, (long)x);
+				BuffWrite.writeShort(toInsert, 8, (10 * x));
+				BuffWrite.writeInt(toInsert, 10, (3 * x));	
+				tut.insertByPrimaryKey((long)x, toInsert, (long)(x+1));
+			}
+			
+			// read it back
+			for(int x = 1; x < 15; x++)
+			{
+				toInsert = tut.seekByPrimaryKey(x, 3000 + x);
+				System.out.println("read2 =" + BuffRead.readInt(toInsert, 10));
+			}				
+			
+			// delete it all backwards
+			for(int x = 14; x >= 1; x--)
+			{
+				tut.deletePrimaryKey(x, 4000+x);
+			}			
+			
+			// display table
+			System.out.println(tut);
+			System.out.println(tut.cacheToString());
+			
+		} catch (InvalidValueException e) {
+			System.out.println(e.toString());
+			e.printStackTrace();
+		} catch (IOException e) {
+			System.out.println(e.toString());
+			e.printStackTrace();
+		}
 	}
 
 }
