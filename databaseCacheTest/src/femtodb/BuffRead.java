@@ -8,7 +8,7 @@ public class BuffRead {
 	/** read a single byte */
     static final int read(final byte[] buff, final int index)
     {
-    	return buff[index];
+    	return buff[index] & 0xFF;
     }
     
     static final void readFully(final byte[] buff, final int index, final byte[] dest, final int destPos, final int len)
@@ -37,25 +37,25 @@ public class BuffRead {
     
     static final short readShort(final byte[] buff, int index)
     {
-        int ch1 = buff[index++];
-        int ch2 = buff[index];
+        int ch1 = buff[index++] & 0xFF;
+        int ch2 = buff[index] & 0xFF;
         return (short)((ch1 << 8) + (ch2 << 0));
     }
 
     static final char readChar(final byte[] buff, int index)
     {
-        int ch1 = buff[index++];
-        int ch2 = buff[index];
+        int ch1 = buff[index++] & 0xFF;
+        int ch2 = buff[index] & 0xFF;
         return (char)((ch1 << 8) + (ch2 << 0));
     }
 
     static final int readInt(final byte[] buff, int index)
     {
-        int ch1 = buff[index++];
-        int ch2 = buff[index++];
-        int ch3 = buff[index++];
-        int ch4 = buff[index];
-        return ((ch1 << 24) + (ch2 << 16) + (ch3 << 8) + (ch4 << 0));
+        int ch1 = buff[index++] & 0xFF;
+        int ch2 = buff[index++] & 0xFF;
+        int ch3 = buff[index++] & 0xFF;
+        int ch4 = buff[index] & 0xFF;
+        return ((ch1 << 24) | (ch2 << 16) | (ch3 << 8) | (ch4 << 0));
     }
    
     synchronized
@@ -63,13 +63,14 @@ public class BuffRead {
     {
     	byte[] readBuffer2L = readBuffer2;
         readFully(buff, index, readBuffer2L, 0, 8);
-        return (((long)readBuffer2L[0] << 56) +
-                ((long)(readBuffer2L[1] & 255) << 48) +
-                ((long)(readBuffer2L[2] & 255) << 40) +
-                ((long)(readBuffer2L[3] & 255) << 32) +
-                ((long)(readBuffer2L[4] & 255) << 24) +
-                ((readBuffer2L[5] & 255) << 16) +
-                ((readBuffer2L[6] & 255) <<  8) +
+        return (
+        		((long)(readBuffer2L[0] & 255) << 56) |
+                ((long)(readBuffer2L[1] & 255) << 48) |
+                ((long)(readBuffer2L[2] & 255) << 40) |
+                ((long)(readBuffer2L[3] & 255) << 32) |
+                ((long)(readBuffer2L[4] & 255) << 24) |
+                ((readBuffer2L[5] & 255) << 16) |
+                ((readBuffer2L[6] & 255) <<  8) |
                 ((readBuffer2L[7] & 255) <<  0));
     }
 

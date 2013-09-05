@@ -47,7 +47,7 @@ public class Main {
 		t3 = 0;
 		t4 = 0;
 		try {
-//			dos.writeChar('x');
+			dos.writeChar('x');
 			t1 = System.currentTimeMillis();
 			for(int x = 0; x < LOOPS; x++){
 				dos.writeChars("1234567890");

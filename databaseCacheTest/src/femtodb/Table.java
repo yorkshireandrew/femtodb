@@ -594,15 +594,20 @@ public class Table {
 	private final void tryToCombine(final int page, FileMetadata cacheToFreeFMD) throws IOException
 	{		
 		// preconditions are the page is loaded in the cache, it is not already set free and it is modified
-		
+		System.out.println("trying combine");
+
 		// See if combine is worth taking any further
 		int cacheToFreeFMDRows = cacheToFreeFMD.rows;
-		int combineOccupancyL = combineOccupancy;
-		if(cacheToFreeFMDRows >= combineOccupancyL)return; // we cannot combine so simply return
+		if(cacheToFreeFMDRows >= removeOccupancy)
+		{
+			System.out.println("cacheToFreeFMDRows >= removeOccupancy");	
+			return; // we cannot combine so simply return
+		}
 		
 		// Determine what combinations are possible
 		List<FileMetadata> fileMetadataL = fileMetadata;
 		int cacheToFreeFMDIndex = fileMetadataL.indexOf(cacheToFreeFMD);
+		int combineOccupancyL = combineOccupancy;
 		int frontCombinedRows = -1;
 		int backCombinedRows = -1;
 		boolean frontCombinePossible = false;
@@ -613,6 +618,7 @@ public class Table {
 		// Check if combination with front is possible
 		if(cacheToFreeFMDIndex > 0)
 		{
+			System.out.println("file has a front");
 			frontFMD = fileMetadataL.get(cacheToFreeFMDIndex-1);
 			frontCombinedRows = cacheToFreeFMDRows + frontFMD.rows;
 			if(frontCombinedRows < combineOccupancyL)frontCombinePossible = true;
@@ -622,11 +628,15 @@ public class Table {
 		int lastIndex = fileMetadataL.size()-1;
 		if(cacheToFreeFMDIndex < lastIndex)
 		{
+			System.out.println("file has a back");
 			backFMD = fileMetadataL.get(cacheToFreeFMDIndex+1);
 			backCombinedRows = cacheToFreeFMDRows + backFMD.rows;
 			if(backCombinedRows < combineOccupancyL)backCombinePossible = true;	
 		}
 		
+		System.out.println("Front combine possible:" + frontCombinePossible);
+		System.out.println("Back combine possible:" + backCombinePossible);		
+
 		// choose free-ing action based on what is possible
 		if((!frontCombinePossible)&&(!backCombinePossible))
 		{
@@ -1348,7 +1358,7 @@ public class Table {
 		for(int x = 0; x < length; x++)
 		{
 			int index = offset + x;
-			int i = (int)bytes[index];
+			int i = ((int)bytes[index]) & 0xFF;
 			int ms_nibble = i >> 4;
 			retval = retval + hex.charAt(ms_nibble);
 			int ls_nibble = i % 15;
