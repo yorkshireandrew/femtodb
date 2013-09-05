@@ -4,7 +4,7 @@ public class WriteReadTest {
 
 	public static void main(String[] args) {
 
-		byte[] test = new byte[4];
+		byte[] test = new byte[8];
 		int tes = -1;
 		int tes2 = tes >>> 24;
 		System.out.println("tes2 =" +tes2);
@@ -19,13 +19,32 @@ public class WriteReadTest {
 		int bb = b;
 		System.out.println("bb=" + bb);
 		
-		for(int x = 0; x < 70000; x++)
+		for(long x = 0; x < 70000; x++)
 		{
-			BuffWrite.writeInt(test,0,x);
-			int y = BuffRead.readInt(test,0);
+			BuffWrite.writeLong(test,0,x);
+			long y = BuffRead.readLong(test,0);
 			if( x != y){System.out.println("" + x + " ==> " + y);break;}
 		}
 		
+		long x = -1;
+		BuffWrite.writeLong(test,0,x);
+		long y = BuffRead.readLong(test,0);
+		if( x != y){System.out.println("" + x + " ==> " + y);}
+
+		x = -2;
+		BuffWrite.writeLong(test,0,x);
+		y = BuffRead.readLong(test,0);
+		if( x != y){System.out.println("" + x + " ==> " + y);}
+		
+		x = Long.MAX_VALUE;
+		BuffWrite.writeLong(test,0,x);
+		y = BuffRead.readLong(test,0);
+		if( x != y){System.out.println("" + x + " ==> " + y);}
+		
+		x = Long.MIN_VALUE;
+		BuffWrite.writeLong(test,0,x);
+		y = BuffRead.readLong(test,0);
+		if( x != y){System.out.println("" + x + " ==> " + y);}
 
 	}
 

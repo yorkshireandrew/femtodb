@@ -1358,8 +1358,8 @@ public class Table {
 		for(int x = 0; x < length; x++)
 		{
 			int index = offset + x;
-			int i = ((int)bytes[index]) & 0xFF;
-			int ms_nibble = i >> 4;
+			int i = bytes[index] & 0xFF;
+			int ms_nibble = i >>> 4;
 			retval = retval + hex.charAt(ms_nibble);
 			int ls_nibble = i % 15;
 			retval = retval + hex.charAt(ls_nibble);
