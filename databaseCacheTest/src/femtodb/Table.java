@@ -6,7 +6,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
+
+import javax.naming.OperationNotSupportedException;
 
 import femtodbexceptions.InvalidValueException;
 
@@ -1198,7 +1201,165 @@ public class Table {
 	//******************************************************
 	//******************************************************	
 	
+	//******************************************************
+	//******************************************************
+	//        START OF ITERATORS
+	//******************************************************
+	//******************************************************
+	Iterator<RowAccessType> fastIterator()
+	{
+		return (new Iterator<RowAccessType>()
+				{
+					FileMetadata fmd = null;
+					int fmdRows;
+					int currentRow;
+					
+					boolean 		hasNextCalledLast = false;
+					boolean 		hasNextCalledLastResult = false;
+					
+					@Override
+					public boolean hasNext() {					
+						// if next() was not called since last call, then send previous result
+						if(hasNextCalledLast)return hasNextCalledLastResult;
+						List<FileMetadata> fileMetadataL = fileMetadata;
+						
+						// set these local variables to align with last call to next(), if one occured
+						FileMetadata hasNextFMD = fmd;
+						int hasNextRows 		= fmdRows;
+						int hasNextCurrentRow 	= currentRow;
+						
+						// update fields needed to look forward from 
+						if(hasNextFMD == null)
+						{
+							hasNextFMD			= fileMetadataL.get(0);
+							hasNextRows 		= hasNextFMD.rows;
+							hasNextCurrentRow 	= -1;
+						}
+						
+						// try stepping forward
+						hasNextCurrentRow++;
+						
+						// if we have another row in hasNextFMD return true
+						if(hasNextCurrentRow < hasNextRows)
+						{
+							hasNextCalledLast 		= true;
+							hasNextCalledLastResult = true;									
+							return true;							
+						}
+						
+						// Seek forward through fileMetadata list for next row
+						int nextFMDIndex = fileMetadataL.indexOf(hasNextFMD);
+						int fileMetadataSize = fileMetadataL.size();
+						while(true)
+						{
+							nextFMDIndex++;
+							if(nextFMDIndex == fileMetadataSize)
+							{
+								// reached end of list so return false
+								hasNextCalledLast 		= true;
+								hasNextCalledLastResult = false;									
+								return false;
+							}
+							hasNextFMD = fileMetadataL.get(nextFMDIndex);
+							
+							// if it has a row return true
+							hasNextRows = hasNextFMD.rows;
+							if(hasNextRows > 0)
+							{
+								hasNextCalledLast 		= true;
+								hasNextCalledLastResult = true;									
+								return true;								
+							}
+						}							
+					}
+
+					@Override
+					public RowAccessType next() {
+						hasNextCalledLast = false;
+						List<FileMetadata> fileMetadataL = fileMetadata;
+						// update fields needed to look forward from 
+						if(fmd == null)
+						{
+							fmd			= fileMetadataL.get(0);
+							fmdRows 	= fmd.rows;
+							currentRow 	= -1;
+						}
+						
+						// try stepping forward
+						currentRow++;
+						
+						// if we have another row in hasNextFMD return true
+						if(currentRow < fmdRows)
+						{
+							try {
+								return getRowAccessType(fmd, currentRow);
+							} catch (IOException e) {
+								return null;
+							}
+						}
+						
+						// Seek forward through fileMetadata list for next row
+						int nextFMDIndex = fileMetadataL.indexOf(fmd);
+						int fileMetadataSize = fileMetadataL.size();
+						while(true)
+						{
+							nextFMDIndex++;
+							if(nextFMDIndex == fileMetadataSize)
+							{
+								// reached end of list so return null								
+								return null;
+							}
+							fmd = fileMetadataL.get(nextFMDIndex);
+							fmdRows = fmd.rows;
+							if(fmdRows > 0)
+							{
+								currentRow = 0;
+								try {
+									return getRowAccessType(fmd, currentRow);
+								} catch (IOException e) {
+									return null;
+								}
+							}
+						}	
+					}
+
+					@Override
+					public void remove() {
+						// We don't support remove() because it may alter the fileMetadata table, corrupting the iterator
+						throw new UnsupportedOperationException();
+					}
+					
+					private RowAccessType getRowAccessType(FileMetadata fmd, int row) throws IOException
+					{
+						int page;
+						if(fmd.cached)
+						{
+							page = fmd.cacheIndex;
+						}
+						else
+						{
+							page = loadFileIntoCache(fmd);
+							// update the service number so it remains cached
+							fmd.lastUsedServiceNumber = Table.this.database.getServiceNumber();
+						}
+						
+						byte[] returnData = new byte[tableWidth];
+						int srcPos = page * fileSize + row * tableWidth;
+						System.arraycopy(cache, srcPos, returnData, 0, tableWidth);
+						long primaryKey = getPrimaryKeyForCacheRow(page, row);
+						RowAccessType retval = new RowAccessType(primaryKey, Table.this, returnData);
+						return retval;		
+					}
+			
+				});
+		
+	}
 	
+	//******************************************************
+	//******************************************************
+	//        END OF ITERATORS
+	//******************************************************
+	//******************************************************
 	
 	//*******************************************************************
 	//*******************************************************************
@@ -1420,6 +1581,8 @@ public class Table {
 		if(tableIsOperational) return;
 		this.combineOccupancyRatio = combineOccupancyRatio;
 	}
+	
+	
 	
 	
 }
