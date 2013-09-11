@@ -1030,6 +1030,7 @@ public class Table {
 	//******************************************************
 	//******************************************************	
 	
+	/** Deletes a row in the table given its primary key and a serviceNumber for the operation */
 	final boolean deletePrimaryKey(long primaryKey, long serviceNumber) throws IOException
 	{
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
@@ -1206,15 +1207,15 @@ public class Table {
 	//        START OF ITERATORS
 	//******************************************************
 	//******************************************************
-	Iterator<RowAccessType> fastIterator()
+	FemtoDBIterator fastIterator()
 	{
-		return (new Iterator<RowAccessType>()
+		return (new FemtoDBIterator()
 				{
 					FileMetadata fmd = null;
 					int fmdRows;
 					int currentRow;
 					
-					boolean 		hasNextCalledLast = false;
+					boolean 		hasNextCalledLast 		= false;
 					boolean 		hasNextCalledLastResult = false;
 					
 					@Override
@@ -1329,6 +1330,15 @@ public class Table {
 						throw new UnsupportedOperationException();
 					}
 					
+					@Override
+					public void reset() 
+					{
+						fmd = null;
+						hasNextCalledLast 		= false;
+						hasNextCalledLastResult = false;
+					}
+					
+					/** Private method used by Fast Iterator only */
 					private RowAccessType getRowAccessType(FileMetadata fmd, int row) throws IOException
 					{
 						int page;
@@ -1350,7 +1360,6 @@ public class Table {
 						RowAccessType retval = new RowAccessType(primaryKey, Table.this, returnData);
 						return retval;		
 					}
-			
 				});
 		
 	}
