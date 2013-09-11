@@ -62,7 +62,7 @@ public class TableDebug1 {
 			System.out.println(tut.cacheToString());
 
 			System.out.println("Delete 8");
-			tut.deletePrimaryKey(8L, 1000);
+			tut.deleteByPrimaryKey(8L, 1000);
 			
 			// display table
 			System.out.println(tut);
@@ -132,7 +132,7 @@ public class TableDebug1 {
 			// delete it all
 			for(int x = 1; x < 15; x++)
 			{
-				tut.deletePrimaryKey(x, 2000+x);
+				tut.deleteByPrimaryKey(x, 2000+x);
 			}	
 			
 			System.out.println("finished delete");
@@ -160,7 +160,7 @@ public class TableDebug1 {
 			// delete it all backwards
 			for(int x = 14; x >= 1; x--)
 			{
-				tut.deletePrimaryKey(x, 4000+x);
+				tut.deleteByPrimaryKey(x, 4000+x);
 			}			
 			
 			// display table

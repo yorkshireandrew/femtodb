@@ -102,7 +102,11 @@ public class Table {
 	private FileMetadata[]				cacheContents;	
 			
 	/** The meta data on all the tables files, holding what is in each file and its cache status */
-	private List<FileMetadata>			fileMetadata;			
+	private List<FileMetadata>			fileMetadata;	
+	
+	// ***************** RowAccessTypeFactory ***************************
+	private boolean rowAccessTypeFactorySet = false;
+	private RowAccessTypeFactory rowAccessTypeFactory;
 		
 	//*******************************************************************
 	//*******************************************************************
@@ -447,6 +451,12 @@ public class Table {
 		// This is needed in case a shutdown-restart happens before
 		// the first entry gets inserted in the table.
 		freeCachePage(0);
+		
+		// create the RowAccessTypeFactory
+		if(!rowAccessTypeFactorySet)
+		{
+			rowAccessTypeFactory = new DefaultRowAccessTypeFactory(tableWidth);
+		}
 	}	
 	
 	//*******************************************************************
@@ -863,6 +873,10 @@ public class Table {
 	//         START OF INSERT CODE
 	//******************************************************
 	//******************************************************	
+	final boolean insertRATByPrimaryKey(long primaryKey, RowAccessType toInsert, long serviceNumber) throws IOException
+	{
+		return insertByPrimaryKey(primaryKey, toInsert.byteArray, serviceNumber);
+	}
 	
 	final boolean insertByPrimaryKey(long primaryKey, byte[] toInsert, long serviceNumber) throws IOException
 	{
@@ -941,7 +955,7 @@ public class Table {
 	
 
 	
-	final void insertIntoEmptyPage(long primaryKey, byte[] toInsert, long serviceNumber, int page, FileMetadata fmd) throws IOException
+	private final void insertIntoEmptyPage(long primaryKey, byte[] toInsert, long serviceNumber, int page, FileMetadata fmd) throws IOException
 	{
 		int 	pkCachePageStart 		= page * rowsPerFile;
 		int		cachePageStart 			= page * fileSize;
@@ -968,9 +982,6 @@ public class Table {
 	//******************************************************
 	
 	
-	
-	
-
 	//******************************************************
 	//******************************************************
 	//         START OF SEEK CODE
@@ -1013,6 +1024,42 @@ public class Table {
 		return retval;
 	}
 	
+	final RowAccessType seekRATByPrimaryKey(long primaryKey, long serviceNumber) throws IOException
+	{
+		System.out.println("seeking " + primaryKey);
+		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
+		System.out.println("is in metafile index " + fileMetadataListIndex);
+		// ensure the file containing the range the primary key falls in is loaded into the cache
+		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
+		int page = 0;
+		if(fmd.cached)
+		{
+			page = fmd.cacheIndex;
+		}
+		else
+		{
+			page = loadFileIntoCache(fmd);
+		}
+		
+		if(fmd.rows == 0)
+		{
+				System.out.println("empty table!");
+				return null;	// empty table!		
+		}
+		int row = primaryKeyBinarySearch(page, primaryKey, false, false);
+		if(row == -1)
+		{
+				System.out.println("primary key not found!");
+				return null;		// primary key not found
+		}
+		
+		RowAccessType retval = rowAccessTypeFactory.createRowAccessType(primaryKey, this);	
+		int srcPos = page * fileSize + row * tableWidth;	
+		System.arraycopy(cache, srcPos, retval.byteArray, 0, tableWidth);
+		fmd.lastUsedServiceNumber = serviceNumber;
+		return retval;
+	}
+	
 	//******************************************************
 	//******************************************************
 	//         END OF SEEK CODE
@@ -1031,7 +1078,7 @@ public class Table {
 	//******************************************************	
 	
 	/** Deletes a row in the table given its primary key and a serviceNumber for the operation */
-	final boolean deletePrimaryKey(long primaryKey, long serviceNumber) throws IOException
+	final boolean deleteByPrimaryKey(long primaryKey, long serviceNumber) throws IOException
 	{
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
 		
@@ -1055,7 +1102,7 @@ public class Table {
 		return true;
 	}
 	
-	final void deleteRow(long primaryKey, int page, int row, long serviceNumber) throws IOException
+	private final void deleteRow(long primaryKey, int page, int row, long serviceNumber) throws IOException
 	{
 		FileMetadata fmd = cacheContents[page];
 		int fmdRows = fmd.rows;
@@ -1352,12 +1399,10 @@ public class Table {
 							// update the service number so it remains cached
 							fmd.lastUsedServiceNumber = Table.this.database.getServiceNumber();
 						}
-						
-						byte[] returnData = new byte[tableWidth];
-						int srcPos = page * fileSize + row * tableWidth;
-						System.arraycopy(cache, srcPos, returnData, 0, tableWidth);
 						long primaryKey = getPrimaryKeyForCacheRow(page, row);
-						RowAccessType retval = new RowAccessType(primaryKey, Table.this, returnData);
+						RowAccessType retval = rowAccessTypeFactory.createRowAccessType(primaryKey, Table.this);
+						int srcPos = page * fileSize + row * tableWidth;
+						System.arraycopy(cache, srcPos, retval.byteArray, 0, tableWidth);
 						return retval;		
 					}
 				});
@@ -1589,6 +1634,19 @@ public class Table {
 	final void setCombineOccupancyRatio(double combineOccupancyRatio) {
 		if(tableIsOperational) return;
 		this.combineOccupancyRatio = combineOccupancyRatio;
+	}
+
+	final int getTableWidth() {
+		return tableWidth;
+	}
+
+	final RowAccessTypeFactory getRowAccessTypeFactory() {
+		return rowAccessTypeFactory;
+	}
+
+	final void setRowAccessTypeFactory(RowAccessTypeFactory rowAccessTypeFactory) {
+		this.rowAccessTypeFactory = rowAccessTypeFactory;
+		this.rowAccessTypeFactorySet = true;
 	}
 	
 	
