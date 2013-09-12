@@ -91,31 +91,29 @@ public class BuffRead {
     	for(int x = 0; x < len; x++)
     	{
     		retval[x] = readChar(buff,index);
+    		index += 2;
     	}
     	return retval;
     }
 
     static final String readString(final byte[] buff, int index) throws UTFDataFormatException {
-        int utflen = readShort(buff, index);
+    	int utflen = readShort(buff, index);
         index += 2;
-        byte[] bytearr = new byte[utflen];
         char[] chararr = new char[utflen];
 
         int c, char2, char3;
         int count = 0;
         int chararr_count=0;
 
-        readFully(buff, index, bytearr, 0, utflen);
-
         while (count < utflen) {
-            c = (int) bytearr[count] & 0xff;      
+            c = (int) buff[index + count] & 0xff;      
             if (c > 127) break;
             count++;
             chararr[chararr_count++]=(char)c;
         }
 
         while (count < utflen) {
-            c = (int) bytearr[count] & 0xff;
+            c = (int) buff[index + count] & 0xff;
             switch (c >> 4) {
                 case 0: case 1: case 2: case 3: case 4: case 5: case 6: case 7:
                     /* 0xxxxxxx*/
@@ -128,7 +126,7 @@ public class BuffRead {
                     if (count > utflen)
                         throw new UTFDataFormatException(
                             "malformed input: partial character at end");
-                    char2 = (int) bytearr[count-1];
+                    char2 = (int) buff[index + count-1];
                     if ((char2 & 0xC0) != 0x80)
                         throw new UTFDataFormatException(
                             "malformed input around byte " + count); 
@@ -141,8 +139,8 @@ public class BuffRead {
                     if (count > utflen)
                         throw new UTFDataFormatException(
                             "malformed input: partial character at end");
-                    char2 = (int) bytearr[count-2];
-                    char3 = (int) bytearr[count-1];
+                    char2 = (int) buff[index + count-2];
+                    char3 = (int) buff[index + count-1];
                     if (((char2 & 0xC0) != 0x80) || ((char3 & 0xC0) != 0x80))
                         throw new UTFDataFormatException(
                             "malformed input around byte " + (count-1));
@@ -158,5 +156,70 @@ public class BuffRead {
         }
         // The number of chars produced may be less than utflen
         return new String(chararr, 0, chararr_count);
+    }
+    
+    /** Modifies the passed in string builder */
+    static final StringBuilder readStringBuilder(final byte[] buff, int index, StringBuilder stringBuilder) throws UTFDataFormatException {
+    	int utflen = readShort(buff, index);
+        index += 2;
+        char[] chararr = new char[utflen];
+
+        int c, char2, char3;
+        int count = 0;
+        int chararr_count=0;
+
+        while (count < utflen) {
+            c = (int) buff[index + count] & 0xff;      
+            if (c > 127) break;
+            count++;
+            chararr[chararr_count++]=(char)c;
+        }
+
+        while (count < utflen) {
+            c = (int) buff[index + count] & 0xff;
+            switch (c >> 4) {
+                case 0: case 1: case 2: case 3: case 4: case 5: case 6: case 7:
+                    /* 0xxxxxxx*/
+                    count++;
+                    chararr[chararr_count++]=(char)c;
+                    break;
+                case 12: case 13:
+                    /* 110x xxxx   10xx xxxx*/
+                    count += 2;
+                    if (count > utflen)
+                        throw new UTFDataFormatException(
+                            "malformed input: partial character at end");
+                    char2 = (int) buff[index + count-1];
+                    if ((char2 & 0xC0) != 0x80)
+                        throw new UTFDataFormatException(
+                            "malformed input around byte " + count); 
+                    chararr[chararr_count++]=(char)(((c & 0x1F) << 6) | 
+                                                    (char2 & 0x3F));  
+                    break;
+                case 14:
+                    /* 1110 xxxx  10xx xxxx  10xx xxxx */
+                    count += 3;
+                    if (count > utflen)
+                        throw new UTFDataFormatException(
+                            "malformed input: partial character at end");
+                    char2 = (int) buff[index + count-2];
+                    char3 = (int) buff[index + count-1];
+                    if (((char2 & 0xC0) != 0x80) || ((char3 & 0xC0) != 0x80))
+                        throw new UTFDataFormatException(
+                            "malformed input around byte " + (count-1));
+                    chararr[chararr_count++]=(char)(((c     & 0x0F) << 12) |
+                                                    ((char2 & 0x3F) << 6)  |
+                                                    ((char3 & 0x3F) << 0));
+                    break;
+                default:
+                    /* 10xx xxxx,  1111 xxxx */
+                    throw new UTFDataFormatException(
+                        "malformed input around byte " + count);
+            }
+        }
+        // The number of chars produced may be less than utflen
+        stringBuilder.setLength(0);
+        stringBuilder.append(chararr, 0, chararr_count);
+        return stringBuilder;
     }
 }

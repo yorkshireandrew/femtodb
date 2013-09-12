@@ -5,7 +5,7 @@ import femtodbexceptions.StringExceedsColumnSizeException;
 
 public class BuffWrite {
 
-		static byte[] writeBuffer2 = new byte[8];
+		private static byte[] writeBuffer2 = new byte[8];
 		
 		
 		/** writes one byte value into buffer at the given offset */
@@ -88,9 +88,10 @@ public class BuffWrite {
 	    }
 	    
 	    /** Writes a character array to the buffer (including a 2 byte length value). The length must not exceed 65535 characters */
-	    static final void writeChars(final byte[] buff, int offset, final char[] chars) throws CharArrayExceedsColumnSizeException
+	    static final void writeChars(final byte[] buff, int offset, final char[] chars, int limit) throws CharArrayExceedsColumnSizeException
 	    {
 	    	int len = chars.length;
+	        if ((len*2 + 2) > limit)throw new CharArrayExceedsColumnSizeException();
 	    	if(len > 65535)throw new CharArrayExceedsColumnSizeException();
 	    	writeShort(buff,offset,len);
 	    	offset += 2;
@@ -119,7 +120,7 @@ public class BuffWrite {
 			    }
 	        }
 
-	        if (utflen > limit)throw new StringExceedsColumnSizeException();
+	        if ((utflen + 2) > limit)throw new StringExceedsColumnSizeException();
 	        if (utflen > 65535)throw new StringExceedsColumnSizeException();
 
 	        byte[] bytearr = new byte[utflen+2];
