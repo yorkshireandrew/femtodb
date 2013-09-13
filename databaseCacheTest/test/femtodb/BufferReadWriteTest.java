@@ -10,9 +10,9 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import femtodbexceptions.CharArrayExceedsColumnSizeException;
-import femtodbexceptions.InvalidValueException;
-import femtodbexceptions.StringExceedsColumnSizeException;
+import femtodbexceptions.FemtoBDCharArrayExceedsColumnSizeException;
+import femtodbexceptions.FemtoDBInvalidValueException;
+import femtodbexceptions.FemtoDBStringExceedsColumnSizeException;
 
 import java.io.File;
 import java.io.IOException;
@@ -109,7 +109,7 @@ public class BufferReadWriteTest {
 		
 		try {
 			BuffWrite.writeChars(buff, 1, chars, 14);
-		} catch (CharArrayExceedsColumnSizeException e) {
+		} catch (FemtoBDCharArrayExceedsColumnSizeException e) {
 			fail();
 		}
 		
@@ -126,7 +126,7 @@ public class BufferReadWriteTest {
 		try {
 			BuffWrite.writeChars(buff, 1, chars, 12);
 			fail();
-		} catch (CharArrayExceedsColumnSizeException e) {}
+		} catch (FemtoBDCharArrayExceedsColumnSizeException e) {}
 	}
 	
 	@Test
@@ -201,7 +201,7 @@ public class BufferReadWriteTest {
 		String test = "foobar";
 		try {
 			BuffWrite.writeString(buff,1,19,test);
-		} catch (StringExceedsColumnSizeException e) {
+		} catch (FemtoDBStringExceedsColumnSizeException e) {
 			fail();
 		}
 		
@@ -219,7 +219,7 @@ public class BufferReadWriteTest {
 		try {
 			BuffWrite.writeString(buff,1,7,test);
 			fail();
-		} catch (StringExceedsColumnSizeException e) {}
+		} catch (FemtoDBStringExceedsColumnSizeException e) {}
 	}
 	
 	
@@ -230,7 +230,7 @@ public class BufferReadWriteTest {
 		String test = "foobar";
 		try {
 			BuffWrite.writeString(buff,1,19,test);
-		} catch (StringExceedsColumnSizeException e) {
+		} catch (FemtoDBStringExceedsColumnSizeException e) {
 			fail();
 		}
 		

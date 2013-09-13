@@ -6,12 +6,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
-
-import javax.naming.OperationNotSupportedException;
-
-import femtodbexceptions.InvalidValueException;
+import femtodbexceptions.FemtoDBIOException;
+import femtodbexceptions.FemtoDBInvalidValueException;
+import femtodbexceptions.FemtoDBPrimaryKeyUsedException;
 
 public class Table {
 	static final int 			DEFAULT_FILE_SIZE_IN_BYTES				= 3000;
@@ -21,9 +19,11 @@ public class Table {
 	static final long			NOT_MODIFIED_LRU_BOOST					= 10;
 	static final long			OVER_HALF_FULL_LRU_BOOST				= 5;
 	private static final long  	PK_CACHE_NOT_SET 						= Long.MAX_VALUE;
-	private static final short 	FLAG_CACHE_NOT_SET 						= Short.MIN_VALUE;
+	static final short 			FLAG_CACHE_NOT_SET 						= Short.MIN_VALUE;
 	
-	
+	private final int			ROW_WRITELOCK							= 0x8000;
+	private final int			ROW_READLOCK							= 0x4000;
+
 	/** The database that contains this table */
 	final FemtoDB				database;
 	
@@ -103,6 +103,9 @@ public class Table {
 			
 	/** The meta data on all the tables files, holding what is in each file and its cache status */
 	private List<FileMetadata>			fileMetadata;	
+	
+	/** Used by insertCore for insertOrUpdate, holds the found row in the cache page that needs updating, so a second binary search is not required */
+	private int 						rowToUpdate;
 	
 	// ***************** RowAccessTypeFactory ***************************
 	private boolean rowAccessTypeFactorySet = false;
@@ -300,7 +303,7 @@ public class Table {
 	//          MAKE OPERATIONAL
 	// *********************************************
 	/** Allocates memory and creates first file making the table operational */
-	final void makeOperational()throws InvalidValueException, IOException
+	final void makeOperational()throws FemtoDBInvalidValueException, FemtoDBIOException
 	{
 		if(tableIsOperational) return;
 		tableIsOperational = true;
@@ -310,10 +313,10 @@ public class Table {
 		// Validate rowsPerFile if set otherwise set it automatically to a good value 
 		if(rowsPerFileSet)
 		{
-			if(rowsPerFile <= 0) throw new InvalidValueException("Table " + name + " Files must contain at least one row");
+			if(rowsPerFile <= 0) throw new FemtoDBInvalidValueException("Table " + name + " Files must contain at least one row");
 			actualFileSize = rowsPerFile;
 			actualFileSize = actualFileSize * tableWidth;
-			if(actualFileSize > Integer.MAX_VALUE) throw new InvalidValueException("Table " + name + " Rows per file multiplied table width exceeds an integer value");
+			if(actualFileSize > Integer.MAX_VALUE) throw new FemtoDBInvalidValueException("Table " + name + " Rows per file multiplied table width exceeds an integer value");
 		}
 		else
 		{
@@ -331,19 +334,19 @@ public class Table {
 		}
 		
 		// Validate and set remove occupancy
-		if(removeOccupancyRatio >= 0.5) throw new InvalidValueException("Table " + name + " removeOccupancyRatio must be set less than 0.5. It was " + removeOccupancyRatio);
+		if(removeOccupancyRatio >= 0.5) throw new FemtoDBInvalidValueException("Table " + name + " removeOccupancyRatio must be set less than 0.5. It was " + removeOccupancyRatio);
 		removeOccupancy = (int)(rowsPerFile * removeOccupancyRatio);
 		
 		// Validate and set combine occupancy
-		if(combineOccupancyRatio > 1) throw new InvalidValueException("Table " + name + " combineOccupancyRatio cannot exceed one. It was " + combineOccupancyRatio);
+		if(combineOccupancyRatio > 1) throw new FemtoDBInvalidValueException("Table " + name + " combineOccupancyRatio cannot exceed one. It was " + combineOccupancyRatio);
 		combineOccupancy = (int)(rowsPerFile * combineOccupancyRatio);
 		
-		if(combineOccupancy <= removeOccupancy) throw new InvalidValueException("Table " + name + " Resulting removeOccupancy must be less than combineOccupancy for file combining to function correctly. It was " + removeOccupancy + ":" + combineOccupancy);
+		if(combineOccupancy <= removeOccupancy) throw new FemtoDBInvalidValueException("Table " + name + " Resulting removeOccupancy must be less than combineOccupancy for file combining to function correctly. It was " + removeOccupancy + ":" + combineOccupancy);
 
 		// Validate cache size if set otherwise set it automatically to the default value
 		if(cacheSizeSet)
 		{
-			if(cacheSize < actualFileSize)throw new InvalidValueException("Table " + name + " the cache size must be at least the actual file size " + actualFileSize);
+			if(cacheSize < actualFileSize)throw new FemtoDBInvalidValueException("Table " + name + " the cache size must be at least the actual file size " + actualFileSize);
 		}
 		else
 		{
@@ -418,7 +421,7 @@ public class Table {
 		if(f.exists()){recursiveDelete(f);}
 		if(!f.mkdir())
 		{
-			throw new IOException("Table " + name + " was unable to create directory " + tableDirectory);
+			throw new FemtoDBIOException("Table " + name + " was unable to create directory " + tableDirectory);
 		}
 		
 		// Fill the fileMetadata with a single entry referring to an empty file 
@@ -480,7 +483,7 @@ public class Table {
 	 * @return 				The cache page the file was loaded into.
 	 * @throws IOException	Thrown if there was a problem flushing the LRU cache page, or loading the requested file.
 	 */
-	private final int loadFileIntoCache(final FileMetadata toLoad) throws IOException
+	private final int loadFileIntoCache(final FileMetadata toLoad) throws FemtoDBIOException
 	{		
 		// free a different page in the cache without attempting to combine
 		int pageToForceFree = findLRUCachePage();
@@ -492,15 +495,19 @@ public class Table {
 	}
 	
 	/** Fills a given cache page reading the file referenced by its FileMetadata fmd argument from disk. The page must be made free before this method is called. */
-	private final void loadFileIntoCachePage(int page, FileMetadata fmd) throws IOException
+	private final void loadFileIntoCachePage(int page, FileMetadata fmd) throws FemtoDBIOException
 	{
 		// load the file
 		File f = new File(fmd.filename);
-		FileInputStream fis = new FileInputStream(f);
-		int bytesToRead = tableWidth * fmd.rows;
-		int readByteCount = fis.read(cache, (page * fileSize), bytesToRead);
-		if(readByteCount != bytesToRead) throw new IOException("Table " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename);
-		fis.close();
+		try
+		{
+			FileInputStream fis = new FileInputStream(f);
+			int bytesToRead = tableWidth * fmd.rows;
+			int readByteCount = fis.read(cache, (page * fileSize), bytesToRead);
+			if(readByteCount != bytesToRead) throw new IOException("Table " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename);
+			fis.close();
+		}
+		catch(IOException e){throw new FemtoDBIOException(e.getMessage(),e);}
 		
 		// update fmd
 		fmd.cached = true;
@@ -521,7 +528,7 @@ public class Table {
 	/** Fetches a given file into the cache, returning the cache page that it was fetched into. It is forbidden from using cache page given in the argument pageToExclude. 
 	 * It also does not attempt to combine the flushed caches contents with its neighbours. This method is really of special use while combining and splitting files. 
 	 * The fetchIntoCache method provides a more general implementation for loading files into the cache. */	
-	private final int loadFileIntoCacheIgnoringGivenCachePage(final FileMetadata toLoad, final int pageToExclude) throws IOException
+	private final int loadFileIntoCacheIgnoringGivenCachePage(final FileMetadata toLoad, final int pageToExclude) throws FemtoDBIOException
 	{
 		// free a different page in the cache without attempting to combine
 		int pageToForceFree = findLRUCachePageExcludingPage(pageToExclude);
@@ -573,15 +580,19 @@ public class Table {
 	}
 	
 	/** Free's a given cache page writing its contents to disk. */
-	private final void freeCachePage(int page) throws IOException
+	private final void freeCachePage(int page) throws FemtoDBIOException
 	{	
 		FileMetadata fmd = cacheContents[page];
 		if(fmd == null)return; // cache page must already be free
 		File f = new File(fmd.filename);
-		FileOutputStream fos = new FileOutputStream(f);
-		fos.write(cache, (page * fileSize), (tableWidth * fmd.rows));
-		fos.flush();
-		fos.close();	
+		try
+		{
+			FileOutputStream fos = new FileOutputStream(f);
+			fos.write(cache, (page * fileSize), (tableWidth * fmd.rows));
+			fos.flush();
+			fos.close();	
+		}
+		catch(IOException e){throw new FemtoDBIOException(e.getMessage(),e);}
 		
 		// mark the fmd as not cached and the cachePageContents as now free
 		fmd.cached = false;
@@ -604,7 +615,7 @@ public class Table {
 	//******************************************************	
 	
 	/** Attempts to combine the file related to a given cache page into its neighbours, freeing the cache page*/
-	private final void tryToCombine(final int page, FileMetadata cacheToFreeFMD) throws IOException
+	private final void tryToCombine(final int page, FileMetadata cacheToFreeFMD) throws FemtoDBIOException
 	{		
 		// preconditions are the page is loaded in the cache, it is not already set free and it is modified
 		System.out.println("trying combine");
@@ -697,7 +708,7 @@ public class Table {
 	}
 	
 	/** Combines a given cached file, on a given cache page, into one of its neighbours */
-	private final void combineStage2(int page, FileMetadata toCombineFMD, FileMetadata targetFMD, boolean isFront) throws IOException
+	private final void combineStage2(int page, FileMetadata toCombineFMD, FileMetadata targetFMD, boolean isFront) throws FemtoDBIOException
 	{
 		// ensure targetFMD is cached
 		if(!targetFMD.cached)
@@ -815,7 +826,7 @@ public class Table {
 	//******************************************************	
 
 	/** Called when a page becomes full. It is split in half generating a new file and fileMetadata entry. */
-	private final void splitFile(int page, FileMetadata fmd) throws IOException
+	private final void splitFile(int page, FileMetadata fmd) throws FemtoDBIOException
 	{
 		int newRowsInFirst 					= fmd.rows >> 1; // note this is also the index of first row in second
 		int newIndexOfLastRowInFirst 		= newRowsInFirst - 1; 
@@ -849,10 +860,14 @@ public class Table {
 		
 		// create the second file
 		File f = new File(secondFile.filename);
-		FileOutputStream fos = new FileOutputStream(f);
-		fos.write(cache, (page * fileSize) + (newRowsInFirst * tableWidth), (newRowsInSecond * tableWidth));
-		fos.flush();
-		fos.close();	
+		try{
+			FileOutputStream fos = new FileOutputStream(f);
+			fos.write(cache, (page * fileSize) + (newRowsInFirst * tableWidth), (newRowsInSecond * tableWidth));
+			fos.flush();
+			fos.close();	
+		}
+		catch(IOException e){throw new FemtoDBIOException(e.getMessage(),e);}
+
 	}
 	
 	//******************************************************
@@ -861,24 +876,41 @@ public class Table {
 	//******************************************************
 	//******************************************************	
 
-	
-	
-	
-	
-	
-	
-	
 	//******************************************************
 	//******************************************************
 	//         START OF INSERT CODE
 	//******************************************************
-	//******************************************************	
-	final boolean insertRATByPrimaryKey(long primaryKey, RowAccessType toInsert, long serviceNumber) throws IOException
+	//******************************************************
+	
+	/** Inserts a row with a given primary key into the table, throws a PrimaryKeyUsedException if the primary key already exists. */
+	final void insert(long primaryKey, RowAccessType toInsert, long serviceNumber) throws FemtoDBIOException, FemtoDBPrimaryKeyUsedException
 	{
-		return insertByPrimaryKey(primaryKey, toInsert.byteArray, serviceNumber);
+		boolean inserted = insertCore(primaryKey, toInsert.flags, toInsert.byteArray, serviceNumber);
+		if(!inserted)throw new FemtoDBPrimaryKeyUsedException("Primary key " + primaryKey +" already in table " + name);
 	}
 	
-	final boolean insertByPrimaryKey(long primaryKey, byte[] toInsert, long serviceNumber) throws IOException
+	/** Inserts a row with a given primary key into the table or does nothing (and also returns false) if the primary key already exists. */
+	final boolean insertOrIgnore(long primaryKey, RowAccessType toInsert, long serviceNumber) throws FemtoDBIOException
+	{
+		return insertCore(primaryKey, toInsert.flags, toInsert.byteArray, serviceNumber);
+	}
+	
+	final boolean insertOrIgnoreByteArrayByPrimaryKey(long primaryKey, byte[] toInsert, long serviceNumber) throws FemtoDBIOException
+	{
+			return insertCore(primaryKey, FLAG_CACHE_NOT_SET, toInsert, serviceNumber);
+	}
+	
+	/**
+	 * 
+	 * @param primaryKey			The primary key value where the row data will be inserted.
+	 * @param flag					What to place in the flag cache, use FLAG_CACHE_NOT_SET if this value is not known.
+	 * @param toInsert				The byte array representing the row.
+	 * @param serviceNumber			A long number used by caches LRU algorithm.
+	 * @param throwPKUException 	throws an exception instead of returning -1 if true
+	 * @return						True if an insert occurred
+	 * @throws FemtoDBIOException
+	 */
+	private final boolean insertCore(long primaryKey, short flag, byte[] toInsert, long serviceNumber) throws FemtoDBIOException
 	{
 		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
 		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
@@ -903,7 +935,7 @@ public class Table {
 		}
 		
 		// Find the insert point
-		int insertRow = 0;
+		Integer insertRow = 0;
 		if(primaryKey < fmd.smallestPK)
 		{
 			insertRow = 0;
@@ -912,7 +944,10 @@ public class Table {
 		{
 			// Find the row immediately preceding the primary key 
 			insertRow = primaryKeyBinarySearch(page, primaryKey, true,true);		
-			if(insertRow == -1)return false; // primary key already in use
+			if(insertRow == null)
+			{
+				return false; // primary key already in use
+			}
 			insertRow++; // we need to start shifting from the next one			
 		}
 		
@@ -937,7 +972,7 @@ public class Table {
 
 		// perform the insert
 		pkCacheL[srcPos1] 			= primaryKey;
-		flagCacheL[srcPos1]			= FLAG_CACHE_NOT_SET;
+		flagCacheL[srcPos1]			= flag;
 		System.arraycopy(toInsert, 0, cacheL, srcPos2, tableWidthL);
 		
 		// update file meta data
@@ -953,9 +988,7 @@ public class Table {
 		return true;
 	}	
 	
-
-	
-	private final void insertIntoEmptyPage(long primaryKey, byte[] toInsert, long serviceNumber, int page, FileMetadata fmd) throws IOException
+	private final void insertIntoEmptyPage(long primaryKey, byte[] toInsert, long serviceNumber, int page, FileMetadata fmd)
 	{
 		int 	pkCachePageStart 		= page * rowsPerFile;
 		int		cachePageStart 			= page * fileSize;
@@ -982,13 +1015,48 @@ public class Table {
 	//******************************************************
 	
 	
+	
+	//******************************************************
+	//******************************************************
+	//         UPDATE CODE
+	//******************************************************
+	//******************************************************
+
+	final boolean isRowReadLocked(int page, int row)
+	{
+		
+		int src1 = page * rowsPerFile + rowToUpdate;
+		int src2 = page * fileSize + rowToUpdate * tableWidth;
+		short tablesCurrentFlags = flagCache[src1];
+		if(tablesCurrentFlags == FLAG_CACHE_NOT_SET)
+		{
+			tablesCurrentFlags = BuffRead.readShort(cache, src2 + 8);
+		}
+		if((tablesCurrentFlags & ROW_READLOCK) != 0)return true;
+		return false;	
+	}
+	
+	final boolean isRowWriteLocked(int page, int row)
+	{
+		int src1 = page * rowsPerFile + rowToUpdate;
+		int src2 = page * fileSize + rowToUpdate * tableWidth;
+		short tablesCurrentFlags = flagCache[src1];
+		if(tablesCurrentFlags == FLAG_CACHE_NOT_SET)
+		{
+			tablesCurrentFlags = BuffRead.readShort(cache, src2 + 8);
+		}
+		if((tablesCurrentFlags & ROW_WRITELOCK) != 0)return true;
+		return false;	
+	}
+	
 	//******************************************************
 	//******************************************************
 	//         START OF SEEK CODE
 	//******************************************************
 	//******************************************************	
 	
-	final byte[] seekByPrimaryKey(long primaryKey, long serviceNumber) throws IOException
+	/** Returns the underlying byte array representation of a row, given a primary key and serviceNumber. Introduced during the initial testing phase */
+	final byte[] seekByteArray(long primaryKey, long serviceNumber) throws FemtoDBIOException
 	{
 		System.out.println("seeking " + primaryKey);
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
@@ -1010,8 +1078,8 @@ public class Table {
 				System.out.println("empty table!");
 				return null;	// empty table!		
 		}
-		int row = primaryKeyBinarySearch(page, primaryKey, false, false);
-		if(row == -1)
+		Integer row = primaryKeyBinarySearch(page, primaryKey, false, false);
+		if(row == null)
 			{
 				System.out.println("primary key not found!");
 				return null;		// primary key not found
@@ -1023,8 +1091,8 @@ public class Table {
 		fmd.lastUsedServiceNumber 		= serviceNumber;
 		return retval;
 	}
-	
-	final RowAccessType seekRATByPrimaryKey(long primaryKey, long serviceNumber) throws IOException
+	/** Returns a RowAccessType given a primary key, or null if it does not exist. Requires a serviceNumber for LRU caching */
+	final RowAccessType seek(long primaryKey, long serviceNumber) throws FemtoDBIOException
 	{
 		System.out.println("seeking " + primaryKey);
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
@@ -1046,14 +1114,15 @@ public class Table {
 				System.out.println("empty table!");
 				return null;	// empty table!		
 		}
-		int row = primaryKeyBinarySearch(page, primaryKey, false, false);
-		if(row == -1)
+		Integer row = primaryKeyBinarySearch(page, primaryKey, false, false);
+		if(row == null)
 		{
 				System.out.println("primary key not found!");
 				return null;		// primary key not found
 		}
 		
-		RowAccessType retval = rowAccessTypeFactory.createRowAccessType(primaryKey, this);	
+		int flagSrcPos = page * rowsPerFile + row;
+		RowAccessType retval = rowAccessTypeFactory.createRowAccessType(primaryKey, flagCache[flagSrcPos], this);	
 		int srcPos = page * fileSize + row * tableWidth;	
 		System.arraycopy(cache, srcPos, retval.byteArray, 0, tableWidth);
 		fmd.lastUsedServiceNumber = serviceNumber;
@@ -1077,8 +1146,8 @@ public class Table {
 	//******************************************************
 	//******************************************************	
 	
-	/** Deletes a row in the table given its primary key and a serviceNumber for the operation */
-	final boolean deleteByPrimaryKey(long primaryKey, long serviceNumber) throws IOException
+	/** Deletes a row in the table given its primary key and a serviceNumber for the operation. Returns true if the primary key existed. */
+	final boolean deleteByPrimaryKey(long primaryKey, long serviceNumber) throws FemtoDBIOException
 	{
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
 		
@@ -1095,14 +1164,14 @@ public class Table {
 		}
 		
 		if(fmd.rows == 0)return false;	// empty table!		
-		int row = primaryKeyBinarySearch(page, primaryKey, false, false);
-		if(row == -1)return false;		// primary key not found
+		Integer row = primaryKeyBinarySearch(page, primaryKey, false, false);
+		if(row == null)return false;		// primary key not found
 		
 		deleteRow(primaryKey,page,row,serviceNumber);
 		return true;
 	}
 	
-	private final void deleteRow(long primaryKey, int page, int row, long serviceNumber) throws IOException
+	private final void deleteRow(long primaryKey, int page, int row, long serviceNumber) throws FemtoDBIOException
 	{
 		FileMetadata fmd = cacheContents[page];
 		int fmdRows = fmd.rows;
@@ -1197,7 +1266,7 @@ public class Table {
 	}
 	
 	/** Returns the cache index for a given primary key. Requires the index for the containing file in the fileMetadata list. */
-	private final int primaryKeyBinarySearch(final int page, final long primaryKey, boolean forInsert, boolean overwritePrevention)
+	private final Integer primaryKeyBinarySearch(final int page, final long primaryKey, boolean forInsert, boolean overwritePrevention)
 	{
 		FileMetadata fmd = cacheContents[page];
 		
@@ -1229,7 +1298,8 @@ public class Table {
 			if(testIndex == priorIndex)
 			{
 				// we stopped moving!
-				if(forInsert){return testIndex;}else{return -1;}
+				if(forInsert){return testIndex;}
+				else return null;
 			}
 			priorIndex = testIndex;
 			
@@ -1238,7 +1308,13 @@ public class Table {
 			toBig 	= (primaryKey < testPK);
 			toSmall = (primaryKey > testPK);
 		}
-		if(overwritePrevention)return -1;
+		
+		if(overwritePrevention)
+		{
+			rowToUpdate = testIndex;
+			return null;
+		}
+		
 		return testIndex;		
 	}
 	
@@ -1341,7 +1417,7 @@ public class Table {
 						{
 							try {
 								return getRowAccessType(fmd, currentRow);
-							} catch (IOException e) {
+							} catch (FemtoDBIOException e) {
 								return null;
 							}
 						}
@@ -1364,7 +1440,7 @@ public class Table {
 								currentRow = 0;
 								try {
 									return getRowAccessType(fmd, currentRow);
-								} catch (IOException e) {
+								} catch (FemtoDBIOException e) {
 									return null;
 								}
 							}
@@ -1386,7 +1462,7 @@ public class Table {
 					}
 					
 					/** Private method used by Fast Iterator only */
-					private RowAccessType getRowAccessType(FileMetadata fmd, int row) throws IOException
+					private RowAccessType getRowAccessType(FileMetadata fmd, int row) throws FemtoDBIOException
 					{
 						int page;
 						if(fmd.cached)
@@ -1400,7 +1476,8 @@ public class Table {
 							fmd.lastUsedServiceNumber = Table.this.database.getServiceNumber();
 						}
 						long primaryKey = getPrimaryKeyForCacheRow(page, row);
-						RowAccessType retval = rowAccessTypeFactory.createRowAccessType(primaryKey, Table.this);
+						int flagSrcPos = page * rowsPerFile + row;						
+						RowAccessType retval = rowAccessTypeFactory.createRowAccessType(primaryKey, flagCache[flagSrcPos],Table.this);
 						int srcPos = page * fileSize + row * tableWidth;
 						System.arraycopy(cache, srcPos, retval.byteArray, 0, tableWidth);
 						return retval;		

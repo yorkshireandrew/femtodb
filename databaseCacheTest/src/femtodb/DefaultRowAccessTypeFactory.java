@@ -6,9 +6,9 @@ public class DefaultRowAccessTypeFactory implements RowAccessTypeFactory {
 	{}
 	
 	@Override
-	public RowAccessType createRowAccessType(long primaryKey, Table table) {
+	public RowAccessType createRowAccessType(long primaryKey, short flags, Table table) {
 		byte[] byteArray = new byte[table.getTableWidth()];
-		return new RowAccessType(primaryKey, table,
+		return new RowAccessType(primaryKey, flags, table,
 			byteArray, this);
 	}
 

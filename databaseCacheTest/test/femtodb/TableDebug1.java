@@ -3,7 +3,8 @@ package femtodb;
 import java.io.File;
 import java.io.IOException;
 
-import femtodbexceptions.InvalidValueException;
+import femtodbexceptions.FemtoDBIOException;
+import femtodbexceptions.FemtoDBInvalidValueException;
 
 public class TableDebug1 {
 
@@ -41,7 +42,7 @@ public class TableDebug1 {
 			BuffWrite.writeInt(toInsert, 10, 11);
 			
 			System.out.println("Starting First insert");
-			tut.insertByPrimaryKey(1L, toInsert, 2L);
+			tut.insertOrIgnoreByteArrayByPrimaryKey(1L, toInsert, 2L);
 			System.out.println("Finished First insert");
 
 			// display table
@@ -54,7 +55,7 @@ public class TableDebug1 {
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (11 * x));	
-				tut.insertByPrimaryKey((long)x, toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(x+1));
 			}
 			
 			// display table
@@ -68,16 +69,16 @@ public class TableDebug1 {
 			System.out.println(tut);
 			System.out.println(tut.cacheToString());	
 			
-			byte[] res = tut.seekByPrimaryKey(13L, 2001);
+			byte[] res = tut.seekByteArray(13L, 2001);
 			int readValue = BuffRead.readInt(res, 10);
 			System.out.println("read = " + readValue);
 			
 			
 			
-		} catch (InvalidValueException e) {
+		} catch (FemtoDBInvalidValueException e) {
 			System.out.println(e.toString());
 			e.printStackTrace();
-		} catch (IOException e) {
+		} catch (FemtoDBIOException e) {
 			System.out.println(e.toString());
 			e.printStackTrace();
 		}
@@ -113,7 +114,7 @@ public class TableDebug1 {
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertByPrimaryKey((long)x, toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(x+1));
 			}
 			
 			// display table
@@ -124,7 +125,7 @@ public class TableDebug1 {
 			// read it back
 			for(int x = 1; x < 15; x++)
 			{
-				toInsert = tut.seekByPrimaryKey((long)x, 1000 + x);
+				toInsert = tut.seekByteArray((long)x, 1000 + x);
 				if(toInsert == null)System.out.println("" + x + " was null!");
 				System.out.println("read =" + BuffRead.readInt(toInsert, 10));
 			}	
@@ -147,13 +148,13 @@ public class TableDebug1 {
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (3 * x));	
-				tut.insertByPrimaryKey((long)x, toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(x+1));
 			}
 			
 			// read it back
 			for(int x = 1; x < 15; x++)
 			{
-				toInsert = tut.seekByPrimaryKey(x, 3000 + x);
+				toInsert = tut.seekByteArray(x, 3000 + x);
 				System.out.println("read2 =" + BuffRead.readInt(toInsert, 10));
 			}				
 			
@@ -167,10 +168,10 @@ public class TableDebug1 {
 			System.out.println(tut);
 			System.out.println(tut.cacheToString());
 			
-		} catch (InvalidValueException e) {
+		} catch (FemtoDBInvalidValueException e) {
 			System.out.println(e.toString());
 			e.printStackTrace();
-		} catch (IOException e) {
+		} catch (FemtoDBIOException e) {
 			System.out.println(e.toString());
 			e.printStackTrace();
 		}

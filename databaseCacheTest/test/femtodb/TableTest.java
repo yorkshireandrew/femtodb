@@ -10,7 +10,9 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import femtodbexceptions.InvalidValueException;
+import femtodbexceptions.FemtoDBIOException;
+import femtodbexceptions.FemtoDBInvalidValueException;
+import femtodbexceptions.FemtoDBPrimaryKeyUsedException;
 
 import java.io.File;
 import java.io.IOException;
@@ -59,22 +61,22 @@ public class TableTest {
 			BuffWrite.writeLong(toInsert, 0, 1L);
 			BuffWrite.writeShort(toInsert, 8, 10);
 			BuffWrite.writeInt(toInsert, 10, 11);			
-			tut.insertByPrimaryKey(1L, toInsert, 2L);
+			tut.insertOrIgnoreByteArrayByPrimaryKey(1L, toInsert, 2L);
 			
 			// check it reads back
-			byte[] recalled = tut.seekByPrimaryKey(1L, 3L);
+			byte[] recalled = tut.seekByteArray(1L, 3L);
 			assertEquals(1L, BuffRead.readLong(recalled, 0));
 			assertEquals((short)10, BuffRead.readShort(recalled, 8));
 			assertEquals((int)11, BuffRead.readInt(recalled, 10));
 			
 			// check delete works
 			tut.deleteByPrimaryKey(1L, 4L);
-			byte[] delTest = tut.seekByPrimaryKey(1L, 5L);
+			byte[] delTest = tut.seekByteArray(1L, 5L);
 			if(delTest != null){fail();}
 
-		} catch (InvalidValueException e) {
+		} catch (FemtoDBInvalidValueException e) {
 			fail();
-		} catch (IOException e) {
+		} catch (FemtoDBIOException e) {
 			fail();
 		}
 	}
@@ -112,13 +114,13 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertByPrimaryKey((long)x, toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(x+1));
 			}
 				
 			// read it back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByPrimaryKey((long)x, 1000 + x);
+				readBack = tut.seekByteArray((long)x, 1000 + x);
 				int readInt = BuffRead.readInt(readBack, 10);
 				assertEquals((2*x), readInt);
 			}	
@@ -132,7 +134,7 @@ public class TableTest {
 			// check it does not read back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByPrimaryKey((long)x, 2000 + x);
+				readBack = tut.seekByteArray((long)x, 2000 + x);
 				if(readBack != null){fail();}
 			}
 			
@@ -142,13 +144,13 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (3 * x));	
-				tut.insertByPrimaryKey((long)x, toInsert, (long)(3000 + x));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(3000 + x));
 			}
 			
 			// read it back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByPrimaryKey((long)x, 4000 + x);
+				readBack = tut.seekByteArray((long)x, 4000 + x);
 				int readInt = BuffRead.readInt(readBack, 10);
 				assertEquals((3*x), readInt);
 			}				
@@ -162,14 +164,14 @@ public class TableTest {
 			// check it does not read back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByPrimaryKey((long)x, 2000 + x);
+				readBack = tut.seekByteArray((long)x, 2000 + x);
 				if(readBack != null){fail();}
 			}
 			
 			
-		} catch (InvalidValueException e) {
+		} catch (FemtoDBInvalidValueException e) {
 			fail();
-		} catch (IOException e) {
+		} catch (FemtoDBIOException e) {
 			fail();
 		}
 	}
@@ -209,15 +211,15 @@ public class TableTest {
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));
 				
-				RowAccessType rat = tut.getRowAccessTypeFactory().createRowAccessType(x, tut);
+				RowAccessType rat = tut.getRowAccessTypeFactory().createRowAccessType(x, Table.FLAG_CACHE_NOT_SET, tut);
 				System.arraycopy(toInsert, 0, rat.byteArray, 0, tut.getTableWidth());		
-				tut.insertRATByPrimaryKey((long)x, rat, (long)(x+1));
+				tut.insertOrIgnore((long)x, rat, (long)(x+1));
 			}
 				
 			// read it back
 			for(int x = 1; x < 15; x++)
 			{
-				RowAccessType ratBack = tut.seekRATByPrimaryKey((long)x, 1000 + x);
+				RowAccessType ratBack = tut.seek((long)x, 1000 + x);
 				readBack = ratBack.byteArray;
 				int readInt = BuffRead.readInt(readBack, 10);
 				assertEquals((2*x), readInt);
@@ -232,7 +234,7 @@ public class TableTest {
 			// check it does not read back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByPrimaryKey((long)x, 2000 + x);
+				readBack = tut.seekByteArray((long)x, 2000 + x);
 				if(readBack != null){fail();}
 			}
 			
@@ -242,13 +244,13 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (3 * x));	
-				tut.insertByPrimaryKey((long)x, toInsert, (long)(3000 + x));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(3000 + x));
 			}
 			
 			// read it back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByPrimaryKey((long)x, 4000 + x);
+				readBack = tut.seekByteArray((long)x, 4000 + x);
 				int readInt = BuffRead.readInt(readBack, 10);
 				assertEquals((3*x), readInt);
 			}				
@@ -262,14 +264,14 @@ public class TableTest {
 			// check it does not read back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByPrimaryKey((long)x, 2000 + x);
+				readBack = tut.seekByteArray((long)x, 2000 + x);
 				if(readBack != null){fail();}
 			}
 			
 			
-		} catch (InvalidValueException e) {
+		} catch (FemtoDBInvalidValueException e) {
 			fail();
-		} catch (IOException e) {
+		} catch (FemtoDBIOException e) {
 			fail();
 		}
 	}
@@ -306,7 +308,7 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)(x + 7));
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertByPrimaryKey((long)(x + 7), toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert, (long)(x+1));
 			}	
 			
 			FemtoDBIterator fastIterator = tut.fastIterator();
@@ -348,9 +350,9 @@ public class TableTest {
 			
 			
 		
-		} catch (InvalidValueException e) {
+		} catch (FemtoDBInvalidValueException e) {
 			fail();
-		} catch (IOException e) {
+		} catch (FemtoDBIOException e) {
 			fail();
 		}
 		

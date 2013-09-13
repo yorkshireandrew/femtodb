@@ -1,10 +1,10 @@
 package femtodb;
 
-import java.io.IOException;
+import femtodbexceptions.FemtoDBIOException;
 
 public interface FemtoDBIterator {
 	boolean 		hasNext();				
-	RowAccessType 	next() 		throws IOException;
+	RowAccessType 	next() 		throws FemtoDBIOException;
 	void 			remove() 	throws UnsupportedOperationException;
 	void			reset();	
 }

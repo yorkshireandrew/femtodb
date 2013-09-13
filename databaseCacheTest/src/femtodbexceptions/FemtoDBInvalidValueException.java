@@ -1,13 +1,13 @@
 package femtodbexceptions;
 
-public class InvalidValueException extends FemtoDBException {
+public class FemtoDBInvalidValueException extends FemtoDBException {
 	private static final long serialVersionUID = 1L;
 
-	public InvalidValueException() {
+	public FemtoDBInvalidValueException() {
 		super(FemtoDBException.INVALID_VALUE);
 	}
 	
-	public InvalidValueException(String s) {
+	public FemtoDBInvalidValueException(String s) {
 		super(FemtoDBException.INVALID_VALUE,s);
 	}
 

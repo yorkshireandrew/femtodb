@@ -1,7 +1,7 @@
 package femtodb;
 
-import femtodbexceptions.CharArrayExceedsColumnSizeException;
-import femtodbexceptions.StringExceedsColumnSizeException;
+import femtodbexceptions.FemtoBDCharArrayExceedsColumnSizeException;
+import femtodbexceptions.FemtoDBStringExceedsColumnSizeException;
 
 public class BuffWrite {
 
@@ -88,11 +88,11 @@ public class BuffWrite {
 	    }
 	    
 	    /** Writes a character array to the buffer (including a 2 byte length value). The length must not exceed 65535 characters */
-	    static final void writeChars(final byte[] buff, int offset, final char[] chars, int limit) throws CharArrayExceedsColumnSizeException
+	    static final void writeChars(final byte[] buff, int offset, final char[] chars, int limit) throws FemtoBDCharArrayExceedsColumnSizeException
 	    {
 	    	int len = chars.length;
-	        if ((len*2 + 2) > limit)throw new CharArrayExceedsColumnSizeException();
-	    	if(len > 65535)throw new CharArrayExceedsColumnSizeException();
+	        if ((len*2 + 2) > limit)throw new FemtoBDCharArrayExceedsColumnSizeException();
+	    	if(len > 65535)throw new FemtoBDCharArrayExceedsColumnSizeException();
 	    	writeShort(buff,offset,len);
 	    	offset += 2;
 	    	for(int x = 0; x < len; x++)
@@ -102,7 +102,7 @@ public class BuffWrite {
 	    	} 	
 	    }
 	    
-	    static final void writeString(final byte[] buff, final int offset, final int limit, final String str) throws StringExceedsColumnSizeException {
+	    static final void writeString(final byte[] buff, final int offset, final int limit, final String str) throws FemtoDBStringExceedsColumnSizeException {
 	        int strlen = str.length();
 	        int utflen = 0;
 	        int c, count = 0;
@@ -120,8 +120,8 @@ public class BuffWrite {
 			    }
 	        }
 
-	        if ((utflen + 2) > limit)throw new StringExceedsColumnSizeException();
-	        if (utflen > 65535)throw new StringExceedsColumnSizeException();
+	        if ((utflen + 2) > limit)throw new FemtoDBStringExceedsColumnSizeException();
+	        if (utflen > 65535)throw new FemtoDBStringExceedsColumnSizeException();
 
 	        byte[] bytearr = new byte[utflen+2];
 	     
