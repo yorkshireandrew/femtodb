@@ -508,7 +508,7 @@ public class Table {
 			FileInputStream fis = new FileInputStream(f);
 			int bytesToRead = tableWidth * fmd.rows;
 			int readByteCount = fis.read(cache, (page * fileSize), bytesToRead);
-			if(readByteCount != bytesToRead) throw new IOException("Table " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename);
+			if(readByteCount != bytesToRead) throw new IOException("Table " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename + " expected " + bytesToRead + " and read " + readByteCount);
 			fis.close();
 		}
 		catch(IOException e){throw new FemtoDBIOException(e.getMessage(),e);}
@@ -587,17 +587,21 @@ public class Table {
 	private final void freeCachePage(int page) throws FemtoDBIOException
 	{	
 		FileMetadata fmd = cacheContents[page];
+		System.out.println("freeing cache page " + page);
 		if(fmd == null)return; // cache page must already be free
-		File f = new File(fmd.filename);
-		try
+		if(fmd.modified)
 		{
-			FileOutputStream fos = new FileOutputStream(f);
-			fos.write(cache, (page * fileSize), (tableWidth * fmd.rows));
-			fos.flush();
-			fos.close();	
+			System.out.println("containing " + fmd.toString());
+			File f = new File(fmd.filename);
+			try
+			{
+				FileOutputStream fos = new FileOutputStream(f);
+				fos.write(cache, (page * fileSize), (tableWidth * fmd.rows));
+				fos.flush();
+				fos.close();	
+			}
+			catch(IOException e){throw new FemtoDBIOException(e.getMessage(),e);}
 		}
-		catch(IOException e){throw new FemtoDBIOException(e.getMessage(),e);}
-		
 		// mark the fmd as not cached and the cachePageContents as now free
 		fmd.cached = false;
 		fmd.cacheIndex = -1;
@@ -739,7 +743,7 @@ public class Table {
 		
 		// use largest lastUsedServiceNumber
 		long toCombineFMDLastUsedServiceNumber = toCombineFMD.lastUsedServiceNumber;
-		if(toCombineFMDLastUsedServiceNumber > targetFMD.modificationServiceNumber)targetFMD.lastUsedServiceNumber = toCombineFMDLastUsedServiceNumber;	
+		if(toCombineFMDLastUsedServiceNumber > targetFMD.lastUsedServiceNumber)targetFMD.lastUsedServiceNumber = toCombineFMDLastUsedServiceNumber;	
 		targetFMD.modified = true;
 
 		// free up toCombine cache and remove file
@@ -1226,8 +1230,8 @@ public class Table {
 		int page = cachePageOf(fmd);
 		
 		if(fmd.rows == 0)return false;	// empty table!		
-		Integer row = primaryKeyBinarySearch(page, primaryKey, false, false);
-		if(row == null)return false;		// primary key not found
+		int row = primaryKeyBinarySearch(page, primaryKey, false, false);
+		if(row == -1)return false;		// primary key not found
 		
 		deleteRow(primaryKey,page,row,serviceNumber);
 		return true;
@@ -1541,10 +1545,16 @@ public class Table {
 						List<FileMetadata> fileMetadataL = fileMetadata;
 						if(hasPrimaryKey)
 						{
+							System.out.println("iterator has primary key " + primaryKey);
 							int hasNextFMDIndex = fileMetadataBinarySearch(primaryKey);
-							if(hasNextFMDIndex == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");
-							FileMetadata hasNextfmd = fileMetadataL.get(hasNextFMDIndex);		
-							int page = loadFileIntoCache(hasNextfmd);						
+							if(hasNextFMDIndex == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");							
+							FileMetadata hasNextfmd = fileMetadataL.get(hasNextFMDIndex);
+							System.out.println("search gave \n" + hasNextfmd);
+							
+							// catch case of an empty table (as primaryKeyBinarySearch would return its first row)
+							if(hasNextfmd.rows <= 0)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");
+	
+							int page = cachePageOf(hasNextfmd);						
 							int row = primaryKeyBinarySearch(page, primaryKey, false, false);
 							if(row == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");
 							row++; // move forward by one
@@ -1589,8 +1599,12 @@ public class Table {
 						{
 							int nextFMDIndex = fileMetadataBinarySearch(primaryKey);
 							if(nextFMDIndex == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");
-							FileMetadata nextFMD = fileMetadataL.get(nextFMDIndex);		
-							int page = loadFileIntoCache(nextFMD);						
+							FileMetadata nextFMD = fileMetadataL.get(nextFMDIndex);
+							
+							// catch case of an empty table (as primaryKeyBinarySearch would return its first row)
+							if(nextFMD.rows <= 0)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");						
+							
+							int page = cachePageOf(nextFMD);						
 							int row = primaryKeyBinarySearch(page, primaryKey, false, false);
 							if(row == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");
 							row++; // move forward by one
@@ -1648,40 +1662,50 @@ public class Table {
 
 					@Override
 					public void remove(long serviceNumber) throws FemtoDBConcurrentModificationException, FemtoDBIOException {
+						System.out.println("**** REMOVE CALLED ****");
+						System.out.println("looking for primary key " + primaryKey);
 						if(!hasPrimaryKey)return;
 						List<FileMetadata> fileMetadataL = fileMetadata;
 						
 						int removeFMDIndex = fileMetadataBinarySearch(primaryKey);
 						if(removeFMDIndex == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");
-						FileMetadata removeFMD = fileMetadataL.get(removeFMDIndex);				
-						int page = loadFileIntoCache(removeFMD);	
-						
+						FileMetadata removeFMD = fileMetadataL.get(removeFMDIndex);	
+						if(removeFMD.rows <= 0)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");						
+						int page = cachePageOf(removeFMD);							
 						int row = primaryKeyBinarySearch(page, primaryKey, false, false);
 						if(row == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");
-
+						System.out.println("believe it is in row " + row + "of");
 						if(row > 0)
 						{
+							System.out.println("safeIterator deleting row " + row);
 							deleteRow(primaryKey, page, row, serviceNumber);
 							row--;
+							System.out.println("now looing up row " + row);
 							primaryKey = getPrimaryKeyForCacheRow(page, row);
+							System.out.println("which gave primary key " + primaryKey);
 							return;
 						}
 						else
 						{
+							System.out.println("safeIterator deleting first row");
 							deleteRow(primaryKey, page, row, serviceNumber);
 							removeFMDIndex--;
 							while(removeFMDIndex >= 0)
 							{
 								removeFMD = fileMetadataL.get(removeFMDIndex);
+								System.out.println("looking for row in " + removeFMD.filename);								
 								if(removeFMD.rows > 0)
 								{
+									System.out.println("it has " + removeFMD.rows + " rows");	
 									row = removeFMD.rows - 1;
 									primaryKey = getPrimaryKeyForCacheRow(page, row);
+									System.out.println("last one has primary key " + primaryKey);
 									return;		
 								}
 								removeFMDIndex--;
 							}
 							// empty table so reset iterator
+							System.out.println("empty table so reset the iterator");
 							reset();
 							return;
 						}
@@ -1732,6 +1756,7 @@ public class Table {
 		}
 		else
 		{
+			System.out.println("fmd " + fmd.filename + " says it isnt cached so loading");
 			return loadFileIntoCache(fmd);
 		}
 	}
@@ -1875,7 +1900,10 @@ public class Table {
 		String retval = "";
 		for(int page = 0; page < cachePagesL; page ++)
 		{
-			retval = retval + "=========== page " + page + " =================== \n";
+			FileMetadata fxx = cacheContents[page];
+			String namey = "null";
+			if(fxx != null){namey = fxx.filename;}
+			retval = retval + "=========== page " + page + " =================== " + namey + "\n";
 			for(int row = 0; row < rowsPerFile; row++)
 			{
 				int pkCacheRow = page * rowsPerFileL + row;
