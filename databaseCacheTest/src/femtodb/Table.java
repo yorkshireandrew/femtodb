@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 import femtodbexceptions.FemtoDBIOException;
 import femtodbexceptions.FemtoDBInvalidValueException;
+import femtodbexceptions.FemtoDBPrimaryKeyNotFoundException;
 import femtodbexceptions.FemtoDBPrimaryKeyUsedException;
 
 public class Table {
@@ -906,7 +907,6 @@ public class Table {
 	 * @param flag					What to place in the flag cache, use FLAG_CACHE_NOT_SET if this value is not known.
 	 * @param toInsert				The byte array representing the row.
 	 * @param serviceNumber			A long number used by caches LRU algorithm.
-	 * @param throwPKUException 	throws an exception instead of returning -1 if true
 	 * @return						True if an insert occurred
 	 * @throws FemtoDBIOException
 	 */
@@ -935,7 +935,7 @@ public class Table {
 		}
 		
 		// Find the insert point
-		Integer insertRow = 0;
+		int insertRow = 0;
 		if(primaryKey < fmd.smallestPK)
 		{
 			insertRow = 0;
@@ -944,7 +944,7 @@ public class Table {
 		{
 			// Find the row immediately preceding the primary key 
 			insertRow = primaryKeyBinarySearch(page, primaryKey, true,true);		
-			if(insertRow == null)
+			if(insertRow == -1)
 			{
 				return false; // primary key already in use
 			}
@@ -1016,13 +1016,126 @@ public class Table {
 	
 	
 	
+	
 	//******************************************************
 	//******************************************************
-	//         UPDATE CODE
+	//         START OF UPDATE CODE
 	//******************************************************
 	//******************************************************
+	
+	final void update(long primaryKey, short flag, byte[] toInsert, long serviceNumber) throws FemtoDBIOException, FemtoDBPrimaryKeyNotFoundException
+	{
+		boolean updated = updateOrIgnore(primaryKey, flag, toInsert, serviceNumber);
+		if(!updated)throw new FemtoDBPrimaryKeyNotFoundException("The primary key " + primaryKey + " was not found when updating a row in table " + name);
+	}
+	
+	/** Updates a row given a primary key.
+	 * 
+	 * @param primaryKey			The primary key value where the row data will be inserted.
+	 * @param flag					What to place in the flag cache, use FLAG_CACHE_NOT_SET if this value is not known.
+	 * @param toUpdate				The byte array representing the row.
+	 * @param serviceNumber			A long number used by caches LRU algorithm.
+	 * @return						True if an update occurred (the primary key exists)
+	 * @throws FemtoDBIOException
+	 */
+	final boolean updateOrIgnore(long primaryKey, short flag, byte[] toUpdate, long serviceNumber) throws FemtoDBIOException
+	{
+		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
+		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
 
-	final boolean isRowReadLocked(int page, int row)
+		// Ensure the file containing the range the primary key falls in is loaded into the cache
+		int page = 0;
+		if(fmd.cached)
+		{
+			page = fmd.cacheIndex;
+		}
+		else
+		{
+			page = loadFileIntoCache(fmd);
+		}
+		
+		// Find the update point
+		int updateRow = primaryKeyBinarySearch(page, primaryKey, false,false);		
+		if(updateRow == -1)
+		{
+			return false; // primary key does not exist
+		}
+		
+		// localise class fields for speed
+		int 	tableWidthL 		= tableWidth;
+			
+		// calculate indexes
+		int 	srcPos1 			= page * rowsPerFile + updateRow;		
+		int 	srcPos2 			= page * fileSize + updateRow * tableWidthL;
+
+		// perform the insert
+		pkCache[srcPos1] 			= primaryKey;
+		flagCache[srcPos1]			= flag;
+		System.arraycopy(toUpdate, 0, cache, srcPos2, tableWidthL);
+		
+		// update file meta data
+		fmd.lastUsedServiceNumber 		= serviceNumber;
+		fmd.modificationServiceNumber 	= serviceNumber;
+		fmd.modified					= true;
+		
+		return true;
+	}
+	
+	/** Checks the read lock on a row in the database table, returns one if locked, zero if unlocked and -1 if the primary key does not exist */
+	final int checkRowReadLock(long primaryKey) throws FemtoDBIOException
+	{
+		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
+		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
+
+		// Ensure the file containing the range the primary key falls in is loaded into the cache
+		int page = 0;
+		if(fmd.cached)
+		{
+			page = fmd.cacheIndex;
+		}
+		else
+		{
+			page = loadFileIntoCache(fmd);
+		}
+		
+		// Find the update point
+		int rowToCheck = primaryKeyBinarySearch(page, primaryKey, false,false);		
+		if(rowToCheck == -1)
+		{
+			return -1; // primary key does not exist
+		}
+		
+		return (isRowReadLockedLowLevel(page,rowToCheck) ? 1 : 0);
+	}
+	
+	/** Checks the read lock on a row in the database table, returns one if locked, zero if unlocked and -1 if the primary key does not exist */
+	final int checkRowWriteLock(long primaryKey) throws FemtoDBIOException
+	{
+		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
+		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
+
+		// Ensure the file containing the range the primary key falls in is loaded into the cache
+		int page = 0;
+		if(fmd.cached)
+		{
+			page = fmd.cacheIndex;
+		}
+		else
+		{
+			page = loadFileIntoCache(fmd);
+		}
+		
+		// Find the update point
+		int rowToCheck = primaryKeyBinarySearch(page, primaryKey, false,false);		
+		if(rowToCheck == -1)
+		{
+			return -1; // primary key does not exist
+		}
+		
+		return (isRowWriteLockedLowLevel(page,rowToCheck) ? 1 : 0);
+	}
+	
+	final boolean isRowReadLockedLowLevel(int page, int row)
 	{
 		
 		int src1 = page * rowsPerFile + rowToUpdate;
@@ -1036,7 +1149,7 @@ public class Table {
 		return false;	
 	}
 	
-	final boolean isRowWriteLocked(int page, int row)
+	final boolean isRowWriteLockedLowLevel(int page, int row)
 	{
 		int src1 = page * rowsPerFile + rowToUpdate;
 		int src2 = page * fileSize + rowToUpdate * tableWidth;
@@ -1266,7 +1379,7 @@ public class Table {
 	}
 	
 	/** Returns the cache index for a given primary key. Requires the index for the containing file in the fileMetadata list. */
-	private final Integer primaryKeyBinarySearch(final int page, final long primaryKey, boolean forInsert, boolean overwritePrevention)
+	private final int primaryKeyBinarySearch(final int page, final long primaryKey, boolean forInsert, boolean overwritePrevention)
 	{
 		FileMetadata fmd = cacheContents[page];
 		
@@ -1299,7 +1412,7 @@ public class Table {
 			{
 				// we stopped moving!
 				if(forInsert){return testIndex;}
-				else return null;
+				else return -1;
 			}
 			priorIndex = testIndex;
 			
@@ -1312,7 +1425,7 @@ public class Table {
 		if(overwritePrevention)
 		{
 			rowToUpdate = testIndex;
-			return null;
+			return -1;
 		}
 		
 		return testIndex;		
@@ -1653,6 +1766,7 @@ public class Table {
 		return retval;
 	}
 	
+	/** Used to create representation of the cache for debugging. Creates a left justified string of a given length */
 	private String fwid(String in, int len)
 	{
 		int inlen = in.length();
@@ -1665,7 +1779,8 @@ public class Table {
 		retval = retval + in;
 		return retval;
 	}
-	
+
+	/** Used to create string representation of the cache for debugging */	
 	private String bytesToString(byte[] bytes, int offset, int length)
 	{
 		String hex = "0123456789ABCDEF";
