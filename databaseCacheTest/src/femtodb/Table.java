@@ -6,7 +6,10 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.ConcurrentModificationException;
 import java.util.List;
+
+import femtodbexceptions.FemtoDBConcurrentModificationException;
 import femtodbexceptions.FemtoDBIOException;
 import femtodbexceptions.FemtoDBInvalidValueException;
 import femtodbexceptions.FemtoDBPrimaryKeyNotFoundException;
@@ -917,15 +920,7 @@ public class Table {
 		int fmdRows 				= fmd.rows;
 
 		// Ensure the file containing the range the primary key falls in is loaded into the cache
-		int page = 0;
-		if(fmd.cached)
-		{
-			page = fmd.cacheIndex;
-		}
-		else
-		{
-			page = loadFileIntoCache(fmd);
-		}
+		int page = cachePageOf(fmd);
 		
 		// handle the special case of an empty table
 		if(fmdRows == 0)
@@ -1044,15 +1039,7 @@ public class Table {
 		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
 
 		// Ensure the file containing the range the primary key falls in is loaded into the cache
-		int page = 0;
-		if(fmd.cached)
-		{
-			page = fmd.cacheIndex;
-		}
-		else
-		{
-			page = loadFileIntoCache(fmd);
-		}
+		int page = cachePageOf(fmd);
 		
 		// Find the update point
 		int updateRow = primaryKeyBinarySearch(page, primaryKey, false,false);		
@@ -1088,15 +1075,7 @@ public class Table {
 		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
 
 		// Ensure the file containing the range the primary key falls in is loaded into the cache
-		int page = 0;
-		if(fmd.cached)
-		{
-			page = fmd.cacheIndex;
-		}
-		else
-		{
-			page = loadFileIntoCache(fmd);
-		}
+		int page = cachePageOf(fmd);
 		
 		// Find the update point
 		int rowToCheck = primaryKeyBinarySearch(page, primaryKey, false,false);		
@@ -1115,15 +1094,7 @@ public class Table {
 		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
 
 		// Ensure the file containing the range the primary key falls in is loaded into the cache
-		int page = 0;
-		if(fmd.cached)
-		{
-			page = fmd.cacheIndex;
-		}
-		else
-		{
-			page = loadFileIntoCache(fmd);
-		}
+		int page = cachePageOf(fmd);
 		
 		// Find the update point
 		int rowToCheck = primaryKeyBinarySearch(page, primaryKey, false,false);		
@@ -1176,15 +1147,7 @@ public class Table {
 		System.out.println("is in metafile index " + fileMetadataListIndex);
 		// ensure the file containing the range the primary key falls in is loaded into the cache
 		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
-		int page = 0;
-		if(fmd.cached)
-		{
-			page = fmd.cacheIndex;
-		}
-		else
-		{
-			page = loadFileIntoCache(fmd);
-		}
+		int page = cachePageOf(fmd);
 		
 		if(fmd.rows == 0)
 		{
@@ -1204,6 +1167,7 @@ public class Table {
 		fmd.lastUsedServiceNumber 		= serviceNumber;
 		return retval;
 	}
+	
 	/** Returns a RowAccessType given a primary key, or null if it does not exist. Requires a serviceNumber for LRU caching */
 	final RowAccessType seek(long primaryKey, long serviceNumber) throws FemtoDBIOException
 	{
@@ -1212,15 +1176,8 @@ public class Table {
 		System.out.println("is in metafile index " + fileMetadataListIndex);
 		// ensure the file containing the range the primary key falls in is loaded into the cache
 		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
-		int page = 0;
-		if(fmd.cached)
-		{
-			page = fmd.cacheIndex;
-		}
-		else
-		{
-			page = loadFileIntoCache(fmd);
-		}
+		
+		int page = cachePageOf(fmd);
 		
 		if(fmd.rows == 0)
 		{
@@ -1266,15 +1223,7 @@ public class Table {
 		
 		// ensure the file containing the range the primary key falls in is loaded into the cache
 		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
-		int page = 0;
-		if(fmd.cached)
-		{
-			page = fmd.cacheIndex;
-		}
-		else
-		{
-			page = loadFileIntoCache(fmd);
-		}
+		int page = cachePageOf(fmd);
 		
 		if(fmd.rows == 0)return false;	// empty table!		
 		Integer row = primaryKeyBinarySearch(page, primaryKey, false, false);
@@ -1284,6 +1233,7 @@ public class Table {
 		return true;
 	}
 	
+	/** low level row delete, page must already be in cache */
 	private final void deleteRow(long primaryKey, int page, int row, long serviceNumber) throws FemtoDBIOException
 	{
 		FileMetadata fmd = cacheContents[page];
@@ -1480,39 +1430,34 @@ public class Table {
 						if(hasNextCurrentRow < hasNextRows)
 						{
 							hasNextCalledLast 		= true;
-							hasNextCalledLastResult = true;									
+							hasNextCalledLastResult = true;
 							return true;							
 						}
 						
 						// Seek forward through fileMetadata list for next row
-						int nextFMDIndex = fileMetadataL.indexOf(hasNextFMD);
-						int fileMetadataSize = fileMetadataL.size();
-						while(true)
+						int hasNextFMDIndex = fileMetadataL.indexOf(hasNextFMD);
+						hasNextFMDIndex++;
+						int fmdSize 		= fileMetadataL.size();
+						while(hasNextFMDIndex < fmdSize)
 						{
-							nextFMDIndex++;
-							if(nextFMDIndex == fileMetadataSize)
-							{
-								// reached end of list so return false
-								hasNextCalledLast 		= true;
-								hasNextCalledLastResult = false;									
-								return false;
-							}
-							hasNextFMD = fileMetadataL.get(nextFMDIndex);
-							
-							// if it has a row return true
-							hasNextRows = hasNextFMD.rows;
-							if(hasNextRows > 0)
+							hasNextFMD = fileMetadataL.get(hasNextFMDIndex);
+							if(hasNextFMD.rows > 0)
 							{
 								hasNextCalledLast 		= true;
-								hasNextCalledLastResult = true;									
-								return true;								
+								hasNextCalledLastResult = true;
+								return true;
 							}
-						}							
+							hasNextFMDIndex++;
+						}
+						hasNextCalledLast 		= true;
+						hasNextCalledLastResult = false;
+						return false;						
 					}
 
 					@Override
-					public RowAccessType next() {
+					public RowAccessType next(long serviceNumber) throws FemtoDBIOException {
 						hasNextCalledLast = false;
+						
 						List<FileMetadata> fileMetadataL = fileMetadata;
 						// update fields needed to look forward from 
 						if(fmd == null)
@@ -1525,43 +1470,38 @@ public class Table {
 						// try stepping forward
 						currentRow++;
 						
-						// if we have another row in hasNextFMD return true
+						// if we have another row in hasNextFMD return it
 						if(currentRow < fmdRows)
 						{
-							try {
-								return getRowAccessType(fmd, currentRow);
-							} catch (FemtoDBIOException e) {
-								return null;
-							}
+							RowAccessType retval = getRowAccessType(fmd, currentRow);
+							fmd.lastUsedServiceNumber = serviceNumber;
+							return retval;
 						}
 						
 						// Seek forward through fileMetadata list for next row
 						int nextFMDIndex = fileMetadataL.indexOf(fmd);
-						int fileMetadataSize = fileMetadataL.size();
-						while(true)
+						nextFMDIndex++;
+						int fmdSize = fileMetadataL.size();
+						while(nextFMDIndex < fmdSize)
 						{
-							nextFMDIndex++;
-							if(nextFMDIndex == fileMetadataSize)
+							FileMetadata nextFMD = fileMetadataL.get(nextFMDIndex);
+							if(nextFMD.rows > 0)
 							{
-								// reached end of list so return null								
-								return null;
-							}
-							fmd = fileMetadataL.get(nextFMDIndex);
-							fmdRows = fmd.rows;
-							if(fmdRows > 0)
-							{
+								fmd = nextFMD;
 								currentRow = 0;
-								try {
-									return getRowAccessType(fmd, currentRow);
-								} catch (FemtoDBIOException e) {
-									return null;
-								}
+								fmdRows = nextFMD.rows;
+								
+								RowAccessType retval = getRowAccessType(nextFMD, 0);
+								fmd.lastUsedServiceNumber = serviceNumber;
+								return retval;
 							}
-						}	
+							nextFMDIndex++;
+						}
+						return null;
 					}
 
 					@Override
-					public void remove() {
+					public void remove(long serviceNumber) {
 						// We don't support remove() because it may alter the fileMetadata table, corrupting the iterator
 						throw new UnsupportedOperationException();
 					}
@@ -1577,17 +1517,187 @@ public class Table {
 					/** Private method used by Fast Iterator only */
 					private RowAccessType getRowAccessType(FileMetadata fmd, int row) throws FemtoDBIOException
 					{
-						int page;
-						if(fmd.cached)
+						int page = cachePageOf(fmd);
+						long primaryKey = getPrimaryKeyForCacheRow(page, row);					
+						int flagSrcPos = page * rowsPerFile + row;						
+						RowAccessType retval = rowAccessTypeFactory.createRowAccessType(primaryKey, flagCache[flagSrcPos], Table.this);
+						int srcPos = page * fileSize + row * tableWidth;
+						System.arraycopy(cache, srcPos, retval.byteArray, 0, tableWidth);
+						return retval;		
+					}
+				});
+		
+	}
+	
+	FemtoDBIterator safeIterator()
+	{
+		return (new FemtoDBIterator()
+				{
+					boolean			hasPrimaryKey = false;
+					long 			primaryKey;
+					
+					@Override
+					public boolean hasNext() throws FemtoDBConcurrentModificationException, FemtoDBIOException{	
+						List<FileMetadata> fileMetadataL = fileMetadata;
+						if(hasPrimaryKey)
 						{
-							page = fmd.cacheIndex;
+							int hasNextFMDIndex = fileMetadataBinarySearch(primaryKey);
+							if(hasNextFMDIndex == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");
+							FileMetadata hasNextfmd = fileMetadataL.get(hasNextFMDIndex);		
+							int page = loadFileIntoCache(hasNextfmd);						
+							int row = primaryKeyBinarySearch(page, primaryKey, false, false);
+							if(row == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");
+							row++; // move forward by one
+							if(row < hasNextfmd.rows)
+							{
+								return true;
+							}
+							else
+							{
+								// seek forward through files for next row
+								int fmdSize = fileMetadataL.size();
+								hasNextFMDIndex++;
+								
+								while(hasNextFMDIndex < fmdSize)
+								{
+									FileMetadata fmd = fileMetadataL.get(hasNextFMDIndex);
+									if(fmd.rows > 0)return true;
+									hasNextFMDIndex++;
+								}
+								return false; // must be an empty table	
+							}			
 						}
 						else
 						{
-							page = loadFileIntoCache(fmd);
-							// update the service number so it remains cached
-							fmd.lastUsedServiceNumber = Table.this.database.getServiceNumber();
+							// OK we need to find the first primary key
+							int fmdIndex 		= 0;
+							int fmdSize 		= fileMetadataL.size();
+							while(fmdIndex < fmdSize)
+							{
+								FileMetadata fmd = fileMetadataL.get(fmdIndex);
+								if(fmd.rows > 0)return true;
+								fmdIndex++;
+							}
+							return false; // must be an empty table	
 						}
+					}
+
+					@Override
+					public RowAccessType next(long serviceNumber) throws FemtoDBIOException, FemtoDBConcurrentModificationException {
+						List<FileMetadata> fileMetadataL = fileMetadata;
+						if(hasPrimaryKey)
+						{
+							int nextFMDIndex = fileMetadataBinarySearch(primaryKey);
+							if(nextFMDIndex == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");
+							FileMetadata nextFMD = fileMetadataL.get(nextFMDIndex);		
+							int page = loadFileIntoCache(nextFMD);						
+							int row = primaryKeyBinarySearch(page, primaryKey, false, false);
+							if(row == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");
+							row++; // move forward by one
+							if(row < nextFMD.rows)
+							{
+								RowAccessType retval = getRowAccessType(nextFMD, row);
+								nextFMD.lastUsedServiceNumber = serviceNumber;
+								primaryKey = retval.primaryKey;
+								hasPrimaryKey = true;
+								return retval;								
+							}
+							else
+							{
+								// seek forward through files for next row
+								int fmdSize = fileMetadataL.size();
+								nextFMDIndex++;
+								
+								while(nextFMDIndex < fmdSize)
+								{
+									nextFMD = fileMetadataL.get(nextFMDIndex);
+									if(nextFMD.rows > 0)
+									{
+										RowAccessType retval = getRowAccessType(nextFMD, 0);
+										nextFMD.lastUsedServiceNumber = serviceNumber;
+										primaryKey = retval.primaryKey;
+										hasPrimaryKey = true;
+										return retval;	
+									}
+									nextFMDIndex++;
+								}
+								return null; // must be an empty table	
+							}			
+						}
+						else
+						{
+							// OK we need to find the first primary key
+							int fmdIndex 		= 0;
+							int fmdSize 		= fileMetadataL.size();
+							while(fmdIndex < fmdSize)
+							{
+								FileMetadata nextFMD = fileMetadataL.get(fmdIndex);
+								if(nextFMD.rows > 0)
+								{
+									RowAccessType retval = getRowAccessType(nextFMD, 0);
+									primaryKey = retval.primaryKey;
+									hasPrimaryKey = true;
+									nextFMD.lastUsedServiceNumber = serviceNumber;
+									return retval;										
+								}
+								fmdIndex++;
+							}
+							return null; // must be an empty table	
+						}
+					}
+
+					@Override
+					public void remove(long serviceNumber) throws FemtoDBConcurrentModificationException, FemtoDBIOException {
+						if(!hasPrimaryKey)return;
+						List<FileMetadata> fileMetadataL = fileMetadata;
+						
+						int removeFMDIndex = fileMetadataBinarySearch(primaryKey);
+						if(removeFMDIndex == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");
+						FileMetadata removeFMD = fileMetadataL.get(removeFMDIndex);				
+						int page = loadFileIntoCache(removeFMD);	
+						
+						int row = primaryKeyBinarySearch(page, primaryKey, false, false);
+						if(row == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + Table.this.name + " while iterating");
+
+						if(row > 0)
+						{
+							deleteRow(primaryKey, page, row, serviceNumber);
+							row--;
+							primaryKey = getPrimaryKeyForCacheRow(page, row);
+							return;
+						}
+						else
+						{
+							deleteRow(primaryKey, page, row, serviceNumber);
+							removeFMDIndex--;
+							while(removeFMDIndex >= 0)
+							{
+								removeFMD = fileMetadataL.get(removeFMDIndex);
+								if(removeFMD.rows > 0)
+								{
+									row = removeFMD.rows - 1;
+									primaryKey = getPrimaryKeyForCacheRow(page, row);
+									return;		
+								}
+								removeFMDIndex--;
+							}
+							// empty table so reset iterator
+							reset();
+							return;
+						}
+					}
+					
+					@Override
+					public void reset() 
+					{
+						hasPrimaryKey = false;
+						primaryKey = -1;
+					}
+					
+					/** Private method used by the Iterator only */
+					private RowAccessType getRowAccessType(FileMetadata fmd, int row) throws FemtoDBIOException
+					{
+						int page = cachePageOf(fmd);
 						long primaryKey = getPrimaryKeyForCacheRow(page, row);
 						int flagSrcPos = page * rowsPerFile + row;						
 						RowAccessType retval = rowAccessTypeFactory.createRowAccessType(primaryKey, flagCache[flagSrcPos],Table.this);
@@ -1613,6 +1723,19 @@ public class Table {
 	//*******************************************************************
 	//*******************************************************************
 
+	/** Ensures a file is in the cache returning its cache page */
+	private int cachePageOf(FileMetadata fmd) throws FemtoDBIOException
+	{
+		if(fmd.cached)
+		{
+			return fmd.cacheIndex;
+		}
+		else
+		{
+			return loadFileIntoCache(fmd);
+		}
+	}
+	
 	private long getPrimaryKeyForCacheRow(int page,int row)
 	{
 		// try the pkCache
