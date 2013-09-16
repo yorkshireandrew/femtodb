@@ -13,7 +13,6 @@ import org.junit.Test;
 import femtodbexceptions.FemtoDBConcurrentModificationException;
 import femtodbexceptions.FemtoDBIOException;
 import femtodbexceptions.FemtoDBInvalidValueException;
-import femtodbexceptions.FemtoDBPrimaryKeyUsedException;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -22,9 +21,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
 
 public class TableTest {
 
@@ -44,7 +40,7 @@ public class TableTest {
 	public void testWriteReadDelete()
 	{
 		FemtoDB fdb = new FemtoDB();
-		fdb.path = "debug1";
+		fdb.setPath("debug1");
 		
 		// make a fresh directory
 		File f = new File("debug1");
@@ -66,17 +62,17 @@ public class TableTest {
 			BuffWrite.writeLong(toInsert, 0, 1L);
 			BuffWrite.writeShort(toInsert, 8, 10);
 			BuffWrite.writeInt(toInsert, 10, 11);			
-			tut.insertOrIgnoreByteArrayByPrimaryKey(1L, toInsert, 2L);
+			tut.insertOrIgnoreByteArrayByPrimaryKey(1L, toInsert);
 			
 			// check it reads back
-			byte[] recalled = tut.seekByteArray(1L, 3L);
+			byte[] recalled = tut.seekByteArray(1L);
 			assertEquals(1L, BuffRead.readLong(recalled, 0));
 			assertEquals((short)10, BuffRead.readShort(recalled, 8));
 			assertEquals((int)11, BuffRead.readInt(recalled, 10));
 			
 			// check delete works
-			tut.deleteByPrimaryKey(1L, 4L);
-			byte[] delTest = tut.seekByteArray(1L, 5L);
+			tut.deleteByPrimaryKey(1L);
+			byte[] delTest = tut.seekByteArray(1L);
 			if(delTest != null){fail();}
 
 		} catch (FemtoDBInvalidValueException e) {
@@ -91,8 +87,9 @@ public class TableTest {
 	@Test
 	public void testSequentialWriteReadDelete()
 	{	
+		try{
 		FemtoDB fdb = new FemtoDB();
-		fdb.path = "debug1";
+		fdb.setPath("debug1");
 		
 		// make a fresh directory
 		File f = new File("debug1");
@@ -119,13 +116,13 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert);
 			}
 				
 			// read it back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByteArray((long)x, 1000 + x);
+				readBack = tut.seekByteArray((long)x);
 				int readInt = BuffRead.readInt(readBack, 10);
 				assertEquals((2*x), readInt);
 			}	
@@ -133,13 +130,13 @@ public class TableTest {
 			// delete it all
 			for(int x = 1; x < 15; x++)
 			{
-				tut.deleteByPrimaryKey(x, 2000+x);
+				tut.deleteByPrimaryKey(x);
 			}
 			
 			// check it does not read back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByteArray((long)x, 2000 + x);
+				readBack = tut.seekByteArray((long)x);
 				if(readBack != null){fail();}
 			}
 			
@@ -149,13 +146,13 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (3 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(3000 + x));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert);
 			}
 			
 			// read it back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByteArray((long)x, 4000 + x);
+				readBack = tut.seekByteArray((long)x);
 				int readInt = BuffRead.readInt(readBack, 10);
 				assertEquals((3*x), readInt);
 			}				
@@ -163,13 +160,13 @@ public class TableTest {
 			// delete it all backwards
 			for(int x = 14; x >= 1; x--)
 			{
-				tut.deleteByPrimaryKey(x, 5000+x);
+				tut.deleteByPrimaryKey(x);
 			}	
 			
 			// check it does not read back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByteArray((long)x, 2000 + x);
+				readBack = tut.seekByteArray((long)x);
 				if(readBack != null){fail();}
 			}
 			
@@ -178,6 +175,11 @@ public class TableTest {
 			fail();
 		} catch (FemtoDBIOException e) {
 			fail();
+		}
+		}catch(Exception e)
+		{
+			System.out.println(e);
+			e.printStackTrace();
 		}
 	}
 	
@@ -188,7 +190,7 @@ public class TableTest {
 	public void testSequentialWriteReadDeleteByRAT()
 	{	
 		FemtoDB fdb = new FemtoDB();
-		fdb.path = "debug1";
+		fdb.setPath("debug1");
 		
 		// make a fresh directory
 		File f = new File("debug1");
@@ -218,13 +220,13 @@ public class TableTest {
 				
 				RowAccessType rat = tut.getRowAccessTypeFactory().createRowAccessType(x, Table.FLAG_CACHE_NOT_SET, tut);
 				System.arraycopy(toInsert, 0, rat.byteArray, 0, tut.getTableWidth());		
-				tut.insertOrIgnore((long)x, rat, (long)(x+1));
+				tut.insertOrIgnore((long)x, rat);
 			}
 				
 			// read it back
 			for(int x = 1; x < 15; x++)
 			{
-				RowAccessType ratBack = tut.seek((long)x, 1000 + x);
+				RowAccessType ratBack = tut.seek((long)x);
 				readBack = ratBack.byteArray;
 				int readInt = BuffRead.readInt(readBack, 10);
 				assertEquals((2*x), readInt);
@@ -233,13 +235,13 @@ public class TableTest {
 			// delete it all
 			for(int x = 1; x < 15; x++)
 			{
-				tut.deleteByPrimaryKey(x, 2000+x);
+				tut.deleteByPrimaryKey(x);
 			}
 			
 			// check it does not read back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByteArray((long)x, 2000 + x);
+				readBack = tut.seekByteArray((long)x);
 				if(readBack != null){fail();}
 			}
 			
@@ -249,13 +251,13 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (3 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(3000 + x));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert);
 			}
 			
 			// read it back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByteArray((long)x, 4000 + x);
+				readBack = tut.seekByteArray((long)x);
 				int readInt = BuffRead.readInt(readBack, 10);
 				assertEquals((3*x), readInt);
 			}				
@@ -263,13 +265,13 @@ public class TableTest {
 			// delete it all backwards
 			for(int x = 14; x >= 1; x--)
 			{
-				tut.deleteByPrimaryKey(x, 5000+x);
+				tut.deleteByPrimaryKey(x);
 			}	
 			
 			// check it does not read back
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut.seekByteArray((long)x, 2000 + x);
+				readBack = tut.seekByteArray((long)x);
 				if(readBack != null){fail();}
 			}
 			
@@ -285,7 +287,7 @@ public class TableTest {
 	public void fastIteratorTest()
 	{
 		FemtoDB fdb = new FemtoDB();
-		fdb.path = "debug1";
+		fdb.setPath("debug1");
 		
 		// make a fresh directory
 		File f = new File("debug1");
@@ -313,17 +315,16 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)(x + 7));
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert);
 			}	
 			
 			FemtoDBIterator fastIterator = tut.fastIterator();
 			
 			// check fastIterator reads back the table correctly
-			long blah = 10000;
 			for(int x = 1; x < 15; x++)
 			{
 				assertTrue(fastIterator.hasNext());
-				rat = fastIterator.next(blah++);
+				rat = fastIterator.next();
 				assertEquals(tut, rat.table);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
@@ -341,7 +342,7 @@ public class TableTest {
 			for(int x = 1; x < 15; x++)
 			{
 				assertTrue(fastIterator.hasNext());
-				rat = fastIterator.next(blah++);
+				rat = fastIterator.next();
 				assertEquals(tut, rat.table);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
@@ -371,7 +372,7 @@ public class TableTest {
 	public void SafeIteratorTest()
 	{
 		FemtoDB fdb = new FemtoDB();
-		fdb.path = "debug1";
+		fdb.setPath("debug1");
 		
 		// make a fresh directory
 		File f = new File("debug1");
@@ -399,17 +400,16 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)(x + 7));
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert);
 			}	
 			
 			FemtoDBIterator safeIterator = tut.safeIterator();
 			
 			// check fastIterator reads back the table correctly
-			long blah = 10000;
 			for(int x = 1; x < 15; x++)
 			{
 				assertTrue(safeIterator.hasNext());
-				rat = safeIterator.next(blah++);
+				rat = safeIterator.next();
 				assertEquals(tut, rat.table);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
@@ -427,7 +427,7 @@ public class TableTest {
 			for(int x = 1; x < 15; x++)
 			{
 				assertTrue(safeIterator.hasNext());
-				rat = safeIterator.next(blah++);
+				rat = safeIterator.next();
 				assertEquals(tut, rat.table);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
@@ -460,7 +460,7 @@ public class TableTest {
 	public void SafeIteratorTest2()
 	{
 		FemtoDB fdb = new FemtoDB();
-		fdb.path = "debug1";
+		fdb.setPath("debug1");
 		
 		// make a fresh directory
 		File f = new File("debug1");
@@ -488,17 +488,16 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)(x + 7));
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert);
 			}	
 			
 			FemtoDBIterator safeIterator = tut.safeIterator();
 			
 			// check safeIterator reads back the table correctly
-			long blah = 10000;
 			for(int x = 1; x < 10; x++)
 			{
 				assertTrue(safeIterator.hasNext());
-				rat = safeIterator.next(blah++);
+				rat = safeIterator.next();
 				assertEquals(tut, rat.table);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
@@ -514,7 +513,7 @@ public class TableTest {
 			// delete a load of stuff before iterator
 			for(int x = 1; x < 8; x++)
 			{
-				tut.deleteByPrimaryKey((long)(x+7), blah++);
+				tut.deleteByPrimaryKey((long)(x+7) );
 			}
 			
 			System.out.println("****** after delete *******");
@@ -527,7 +526,7 @@ public class TableTest {
 			{
 				System.out.println("x = " + x);
 				assertTrue(safeIterator.hasNext());
-				rat = safeIterator.next(blah++);
+				rat = safeIterator.next();
 				assertEquals(tut, rat.table);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
@@ -545,7 +544,7 @@ public class TableTest {
 			for(int x = 8; x < 15; x++)
 			{
 				assertTrue(safeIterator.hasNext());
-				rat = safeIterator.next(blah++);
+				rat = safeIterator.next();
 				assertEquals(tut, rat.table);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
@@ -570,7 +569,7 @@ public class TableTest {
 	public void SafeIteratorTest3()
 	{
 		FemtoDB fdb = new FemtoDB();
-		fdb.path = "debug1";
+		fdb.setPath("debug1");
 		
 		// make a fresh directory
 		File f = new File("debug1");
@@ -598,17 +597,16 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)(x + 7));
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert);
 			}	
 			
 			FemtoDBIterator safeIterator = tut.safeIterator();
 			
 			// check fastIterator reads back the table correctly
-			long blah = 10000;
 			for(int x = 1; x < 10; x++)
 			{
 				assertTrue(safeIterator.hasNext());
-				rat = safeIterator.next(blah++);
+				rat = safeIterator.next();
 				assertEquals(tut, rat.table);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
@@ -619,14 +617,14 @@ public class TableTest {
 			// delete a load of stuff before iterator
 			for(int x = 12; x < 15; x++)
 			{
-				tut.deleteByPrimaryKey((long)(x+7), blah++);
+				tut.deleteByPrimaryKey((long)(x+7) );
 			}
 			
 			int x;
 			
 			x = 10;
 				assertTrue(safeIterator.hasNext());
-				rat = safeIterator.next(blah++);
+				rat = safeIterator.next();
 				assertEquals(tut, rat.table);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
@@ -635,7 +633,7 @@ public class TableTest {
 
 			x = 11;
 				assertTrue(safeIterator.hasNext());
-				rat = safeIterator.next(blah++);
+				rat = safeIterator.next();
 				assertEquals(tut, rat.table);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
@@ -652,7 +650,7 @@ public class TableTest {
 			for(int xx = 1; xx < 12; xx++)
 			{
 				assertTrue(safeIterator.hasNext());
-				rat = safeIterator.next(blah++);
+				rat = safeIterator.next();
 				assertEquals(tut, rat.table);
 				assertEquals((long)(xx + 7),rat.primaryKey);
 				readBack = rat.byteArray;
@@ -675,7 +673,7 @@ public class TableTest {
 	public void SafeIteratorTest4()
 	{
 		FemtoDB fdb = new FemtoDB();
-		fdb.path = "debug1";
+		fdb.setPath("debug1");
 		
 		// make a fresh directory
 		File f = new File("debug1");
@@ -701,17 +699,16 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)(x + 7));
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert);
 
 			
 				FemtoDBIterator safeIterator = tut.safeIterator();
 			
 			// check fastIterator reads back the table correctly
-			long blah = 10000;
 
 				try {
 					assertTrue(safeIterator.hasNext());
-					rat = safeIterator.next(blah++);
+					rat = safeIterator.next();
 					assertEquals(tut, rat.table);
 					assertEquals((long)(x + 7),rat.primaryKey);
 					readBack = rat.byteArray;
@@ -726,7 +723,7 @@ public class TableTest {
 				System.out.println("*******************************************");
 				
 				System.out.println("SafeIteratorTest4() deleting");
-				tut.deleteByPrimaryKey((long)(x+7), blah++);
+				tut.deleteByPrimaryKey((long)(x+7) );
 				System.out.println("SafeIteratorTest4() deleting complete");
 				System.out.println(tut);
 				System.out.println(tut.cacheToString());
@@ -740,7 +737,7 @@ public class TableTest {
 				
 				// should throw exception as current row gone
 				try {
-					safeIterator.next(blah++);
+					safeIterator.next();
 					fail();
 				} catch (FemtoDBConcurrentModificationException e) {
 				}
@@ -756,7 +753,7 @@ public class TableTest {
 	public void SafeIteratorTest5()
 	{
 		FemtoDB fdb = new FemtoDB();
-		fdb.path = "debug1";
+		fdb.setPath("debug1");
 		
 		// make a fresh directory
 		File f = new File("debug1");
@@ -782,28 +779,27 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)(x + 7));
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert);
 
 				x = 2;
 				BuffWrite.writeLong(toInsert, 0, (long)(x + 7));
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert);
 
 				x = 3;
 				BuffWrite.writeLong(toInsert, 0, (long)(x + 7));
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)(x + 7), toInsert);
 
 				FemtoDBIterator safeIterator = tut.safeIterator();
 			
-			long blah = 10000;
 
 				x = 1;
 				try {
 					assertTrue(safeIterator.hasNext());
-					rat = safeIterator.next(blah++);
+					rat = safeIterator.next();
 					assertEquals(tut, rat.table);
 					assertEquals((long)(x + 7),rat.primaryKey);
 					readBack = rat.byteArray;
@@ -816,7 +812,7 @@ public class TableTest {
 				x = 2;
 				try {
 					assertTrue(safeIterator.hasNext());
-					rat = safeIterator.next(blah++);
+					rat = safeIterator.next();
 					assertEquals(tut, rat.table);
 					assertEquals((long)(x + 7),rat.primaryKey);
 					readBack = rat.byteArray;
@@ -828,7 +824,7 @@ public class TableTest {
 				
 				// remove what iterator is currently on - it should go back
 				try {
-					safeIterator.remove(blah++);
+					safeIterator.remove();
 				} catch (UnsupportedOperationException e1) {
 					fail();
 				} catch (FemtoDBConcurrentModificationException e1) {
@@ -839,7 +835,7 @@ public class TableTest {
 				x = 3;
 				try {
 					assertTrue(safeIterator.hasNext());
-					rat = safeIterator.next(blah++);
+					rat = safeIterator.next();
 					if(rat == null)System.out.println("rat was null!");
 					assertEquals(tut, rat.table);
 					assertEquals((long)(x + 7),rat.primaryKey);
@@ -862,7 +858,7 @@ public class TableTest {
 	public void testSerialisation()
 	{
 		FemtoDB fdb = new FemtoDB();
-		fdb.path = "debug1";
+		fdb.setPath("debug1");
 		
 		// make a fresh directory
 		File f = new File("debug1");
@@ -888,7 +884,7 @@ public class TableTest {
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert);
 			}
 		} catch (FemtoDBInvalidValueException e) {
 			fail();
@@ -928,7 +924,7 @@ public class TableTest {
 		
 		// create a new database pointing to the new location
 		FemtoDB fdb2 = new FemtoDB();
-		fdb2.path = "debug2";
+		fdb2.setPath("debug2");
 		
 		
 		// create a new table
@@ -953,7 +949,7 @@ public class TableTest {
 			byte[] readBack;
 			for(int x = 1; x < 15; x++)
 			{
-				readBack = tut2.seekByteArray((long)x, 1000 + x);
+				readBack = tut2.seekByteArray((long)x);
 				int readInt = BuffRead.readInt(readBack, 10);
 				assertEquals((2*x), readInt);
 			}		

@@ -36,7 +36,7 @@ public class Table implements Serializable{
 	private final String 		name;
 	
 	/** The table number */
-	int							tableNumber;
+	long						tableNumber;
 	
 	/** The directory the tables files will be put in. Declared transient so it adapts to operating system seperators */
 	private transient String	tableDirectory;
@@ -68,7 +68,7 @@ public class Table implements Serializable{
 	private boolean				operational;
 	
 	/** The next free file number, so the naming of each file is unique */
-	private long				nextFileNumber;
+	private long				nextUnusedFileNumber;
 	
 	// ************ COLUMN INFORMATION *******************
 		
@@ -87,6 +87,7 @@ public class Table implements Serializable{
 	
 	/** The number of pages (files) held in the cache */
 	private int 						cachePages;
+	
 	
 	/** The cache for the table. Not serialised and must be reallocated on loading */
 	private transient byte[] 			cache;
@@ -107,7 +108,10 @@ public class Table implements Serializable{
 	private transient FileMetadata[]	cacheContents;	
 			
 	/** The meta data on all the tables files, holding what is in each file and its cache status */
-	private List<FileMetadata>			fileMetadata;	
+	private List<FileMetadata>			fileMetadata;
+	
+	/** Count used for LRU caching and file version marking */
+	private long						serviceNumber;
 	
 	// ***************** RowAccessTypeFactory ***************************
 	private boolean rowAccessTypeFactorySet = false;
@@ -121,7 +125,7 @@ public class Table implements Serializable{
 	//*******************************************************************
 	//*******************************************************************	
 
-	Table(FemtoDB database, String name, int tableNumber, String primaryKeyName)
+	Table(FemtoDB database, String name, long tableNumber, String primaryKeyName)
 	{
 		this.database		= database;
 		this.name			= name;
@@ -133,15 +137,20 @@ public class Table implements Serializable{
 		
 		cacheSizeSet 		= false;
 		rowsPerFileSet 		= false;
-		operational 	= false;
+		operational 		= false;
 		
 		removeOccupancyRatio 	= DEFAULT_REMOVE_OCCUPANCY_RATIO;
 		combineOccupancyRatio 	= DEFAULT_ALLOW_COMBINE_OCCUPANCY_RATIO;
 		
-		// add primary key column
-		if(primaryKeyName == null)primaryKeyName="primary_key";
+		// add primary key and status columns
+		if(primaryKeyName == null)primaryKeyName="femtodb_primary_key";
 		addLongColumn(primaryKeyName);
-		addShortColumn("femto_db_status");
+		addShortColumn("femtodb_status");
+		
+		rowAccessTypeFactorySet = false;
+		
+		// set service number to a very low number, but not too low for the LRU algorithm
+		serviceNumber 			= Long.MIN_VALUE + NOT_MODIFIED_LRU_BOOST + OVER_HALF_FULL_LRU_BOOST + 100;
 	}
 
 	//*******************************************************************
@@ -363,10 +372,10 @@ public class Table implements Serializable{
 		allocateMemory();
 		
 		// Initialise nextFileNumber for creating unique filenames
-		nextFileNumber = 0;
+		nextUnusedFileNumber = 0;
 		
 		// Create the directory
-		tableDirectory = database.path + File.separator + Integer.toString(tableNumber);
+		tableDirectory = database.getPath() + File.separator + Long.toString(tableNumber);
 		File f = new File(tableDirectory);
 		if(f.exists()){recursiveDelete(f);}
 		if(!f.mkdir())
@@ -608,7 +617,9 @@ public class Table implements Serializable{
 				FileOutputStream fos = new FileOutputStream(f);
 				fos.write(cache, (page * fileSize), (tableWidth * fmd.rows));
 				fos.flush();
-				fos.close();	
+				fos.close();
+				
+				fmd.modified = false; // disk now matches cache
 			}
 			catch(IOException e){throw new FemtoDBIOException(e.getMessage(),e);}
 		}
@@ -901,21 +912,21 @@ public class Table implements Serializable{
 	//******************************************************
 	
 	/** Inserts a row with a given primary key into the table, throws a PrimaryKeyUsedException if the primary key already exists. */
-	final void insert(long primaryKey, RowAccessType toInsert, long serviceNumber) throws FemtoDBIOException, FemtoDBPrimaryKeyUsedException
+	final void insert(long primaryKey, RowAccessType toInsert) throws FemtoDBIOException, FemtoDBPrimaryKeyUsedException
 	{
-		boolean inserted = insertCore(primaryKey, toInsert.flags, toInsert.byteArray, serviceNumber);
+		boolean inserted = insertCore(primaryKey, toInsert.flags, toInsert.byteArray);
 		if(!inserted)throw new FemtoDBPrimaryKeyUsedException("Primary key " + primaryKey +" already in table " + name);
 	}
 	
 	/** Inserts a row with a given primary key into the table or does nothing (and also returns false) if the primary key already exists. */
-	final boolean insertOrIgnore(long primaryKey, RowAccessType toInsert, long serviceNumber) throws FemtoDBIOException
+	final boolean insertOrIgnore(long primaryKey, RowAccessType toInsert) throws FemtoDBIOException
 	{
-		return insertCore(primaryKey, toInsert.flags, toInsert.byteArray, serviceNumber);
+		return insertCore(primaryKey, toInsert.flags, toInsert.byteArray);
 	}
 	
-	final boolean insertOrIgnoreByteArrayByPrimaryKey(long primaryKey, byte[] toInsert, long serviceNumber) throws FemtoDBIOException
+	final boolean insertOrIgnoreByteArrayByPrimaryKey(long primaryKey, byte[] toInsert) throws FemtoDBIOException
 	{
-			return insertCore(primaryKey, FLAG_CACHE_NOT_SET, toInsert, serviceNumber);
+			return insertCore(primaryKey, FLAG_CACHE_NOT_SET, toInsert);
 	}
 	
 	/**
@@ -923,12 +934,12 @@ public class Table implements Serializable{
 	 * @param primaryKey			The primary key value where the row data will be inserted.
 	 * @param flag					What to place in the flag cache, use FLAG_CACHE_NOT_SET if this value is not known.
 	 * @param toInsert				The byte array representing the row.
-	 * @param serviceNumber			A long number used by caches LRU algorithm.
 	 * @return						True if an insert occurred
 	 * @throws FemtoDBIOException
 	 */
-	private final boolean insertCore(long primaryKey, short flag, byte[] toInsert, long serviceNumber) throws FemtoDBIOException
+	private final boolean insertCore(long primaryKey, short flag, byte[] toInsert) throws FemtoDBIOException
 	{
+		serviceNumber++;
 		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
 		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
 		int fmdRows 				= fmd.rows;
@@ -939,7 +950,7 @@ public class Table implements Serializable{
 		// handle the special case of an empty table
 		if(fmdRows == 0)
 		{
-			insertIntoEmptyPage(primaryKey, toInsert, serviceNumber, page, fmd);
+			insertIntoEmptyPage(primaryKey, toInsert, page, fmd);
 			return true;
 		}
 		
@@ -997,7 +1008,7 @@ public class Table implements Serializable{
 		return true;
 	}	
 	
-	private final void insertIntoEmptyPage(long primaryKey, byte[] toInsert, long serviceNumber, int page, FileMetadata fmd)
+	private final void insertIntoEmptyPage(long primaryKey, byte[] toInsert, int page, FileMetadata fmd)
 	{
 		int 	pkCachePageStart 		= page * rowsPerFile;
 		int		cachePageStart 			= page * fileSize;
@@ -1032,9 +1043,9 @@ public class Table implements Serializable{
 	//******************************************************
 	//******************************************************
 	
-	final void update(long primaryKey, short flag, byte[] toInsert, long serviceNumber) throws FemtoDBIOException, FemtoDBPrimaryKeyNotFoundException
+	final void update(long primaryKey, short flag, byte[] toInsert) throws FemtoDBIOException, FemtoDBPrimaryKeyNotFoundException
 	{
-		boolean updated = updateOrIgnore(primaryKey, flag, toInsert, serviceNumber);
+		boolean updated = updateOrIgnore(primaryKey, flag, toInsert);
 		if(!updated)throw new FemtoDBPrimaryKeyNotFoundException("The primary key " + primaryKey + " was not found when updating a row in table " + name);
 	}
 	
@@ -1043,12 +1054,12 @@ public class Table implements Serializable{
 	 * @param primaryKey			The primary key value where the row data will be inserted.
 	 * @param flag					What to place in the flag cache, use FLAG_CACHE_NOT_SET if this value is not known.
 	 * @param toUpdate				The byte array representing the row.
-	 * @param serviceNumber			A long number used by caches LRU algorithm.
 	 * @return						True if an update occurred (the primary key exists)
 	 * @throws FemtoDBIOException
 	 */
-	final boolean updateOrIgnore(long primaryKey, short flag, byte[] toUpdate, long serviceNumber) throws FemtoDBIOException
+	final boolean updateOrIgnore(long primaryKey, short flag, byte[] toUpdate) throws FemtoDBIOException
 	{
+		serviceNumber++;
 		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
 		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
 
@@ -1077,14 +1088,14 @@ public class Table implements Serializable{
 		// update file meta data
 		fmd.lastUsedServiceNumber 		= serviceNumber;
 		fmd.modificationServiceNumber 	= serviceNumber;
-		fmd.modified					= true;
-		
+		fmd.modified					= true;	
 		return true;
 	}
 	
 	/** Checks the read lock on a row in the database table, returns one if locked, zero if unlocked and -1 if the primary key does not exist */
 	final int checkRowReadLock(long primaryKey) throws FemtoDBIOException
 	{
+		serviceNumber++;
 		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
 		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
 
@@ -1104,6 +1115,7 @@ public class Table implements Serializable{
 	/** Checks the read lock on a row in the database table, returns one if locked, zero if unlocked and -1 if the primary key does not exist */
 	final int checkRowWriteLock(long primaryKey) throws FemtoDBIOException
 	{
+		serviceNumber++;
 		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
 		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
 
@@ -1154,8 +1166,9 @@ public class Table implements Serializable{
 	//******************************************************	
 	
 	/** Returns the underlying byte array representation of a row, given a primary key and serviceNumber. Introduced during the initial testing phase */
-	final byte[] seekByteArray(long primaryKey, long serviceNumber) throws FemtoDBIOException
+	final byte[] seekByteArray(long primaryKey) throws FemtoDBIOException
 	{
+		serviceNumber++;
 		System.out.println("seeking " + primaryKey);
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
 		System.out.println("is in metafile index " + fileMetadataListIndex);
@@ -1183,8 +1196,9 @@ public class Table implements Serializable{
 	}
 	
 	/** Returns a RowAccessType given a primary key, or null if it does not exist. Requires a serviceNumber for LRU caching */
-	final RowAccessType seek(long primaryKey, long serviceNumber) throws FemtoDBIOException
+	final RowAccessType seek(long primaryKey) throws FemtoDBIOException
 	{
+		serviceNumber++;
 		System.out.println("seeking " + primaryKey);
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
 		System.out.println("is in metafile index " + fileMetadataListIndex);
@@ -1231,8 +1245,9 @@ public class Table implements Serializable{
 	//******************************************************	
 	
 	/** Deletes a row in the table given its primary key and a serviceNumber for the operation. Returns true if the primary key existed. */
-	final boolean deleteByPrimaryKey(long primaryKey, long serviceNumber) throws FemtoDBIOException
+	final boolean deleteByPrimaryKey(long primaryKey) throws FemtoDBIOException
 	{
+		serviceNumber++;
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
 		
 		// ensure the file containing the range the primary key falls in is loaded into the cache
@@ -1243,12 +1258,12 @@ public class Table implements Serializable{
 		int row = primaryKeyBinarySearch(page, primaryKey, false, false);
 		if(row == -1)return false;		// primary key not found
 		
-		deleteRow(primaryKey,page,row,serviceNumber);
+		deleteRow(primaryKey,page,row);
 		return true;
 	}
 	
 	/** low level row delete, page must already be in cache */
-	private final void deleteRow(long primaryKey, int page, int row, long serviceNumber) throws FemtoDBIOException
+	private final void deleteRow(long primaryKey, int page, int row) throws FemtoDBIOException
 	{
 		FileMetadata fmd = cacheContents[page];
 		int fmdRows = fmd.rows;
@@ -1468,7 +1483,8 @@ public class Table implements Serializable{
 					}
 
 					@Override
-					public RowAccessType next(long serviceNumber) throws FemtoDBIOException {
+					public RowAccessType next() throws FemtoDBIOException {
+						serviceNumber++;
 						hasNextCalledLast = false;
 						
 						List<FileMetadata> fileMetadataL = fileMetadata;
@@ -1514,7 +1530,7 @@ public class Table implements Serializable{
 					}
 
 					@Override
-					public void remove(long serviceNumber) {
+					public void remove() {
 						// We don't support remove() because it may alter the fileMetadata table, corrupting the iterator
 						throw new UnsupportedOperationException();
 					}
@@ -1602,7 +1618,8 @@ public class Table implements Serializable{
 					}
 
 					@Override
-					public RowAccessType next(long serviceNumber) throws FemtoDBIOException, FemtoDBConcurrentModificationException {
+					public RowAccessType next() throws FemtoDBIOException, FemtoDBConcurrentModificationException {
+						serviceNumber++;
 						List<FileMetadata> fileMetadataL = fileMetadata;
 						if(hasPrimaryKey)
 						{
@@ -1670,7 +1687,8 @@ public class Table implements Serializable{
 					}
 
 					@Override
-					public void remove(long serviceNumber) throws FemtoDBConcurrentModificationException, FemtoDBIOException {
+					public void remove() throws FemtoDBConcurrentModificationException, FemtoDBIOException {
+						serviceNumber++;
 						System.out.println("**** REMOVE CALLED ****");
 						System.out.println("looking for primary key " + primaryKey);
 						if(!hasPrimaryKey)return;
@@ -1687,7 +1705,7 @@ public class Table implements Serializable{
 						if(row > 0)
 						{
 							System.out.println("safeIterator deleting row " + row);
-							deleteRow(primaryKey, page, row, serviceNumber);
+							deleteRow(primaryKey, page, row);
 							row--;
 							System.out.println("now looing up row " + row);
 							primaryKey = getPrimaryKeyForCacheRow(page, row);
@@ -1697,7 +1715,7 @@ public class Table implements Serializable{
 						else
 						{
 							System.out.println("safeIterator deleting first row");
-							deleteRow(primaryKey, page, row, serviceNumber);
+							deleteRow(primaryKey, page, row);
 							removeFMDIndex--;
 							while(removeFMDIndex >= 0)
 							{
@@ -1810,7 +1828,7 @@ public class Table implements Serializable{
 	
 	/** Returns the next available file number for the table that has never been used */
 	private long nextFilenumber() {
-		return nextFileNumber++;
+		return nextUnusedFileNumber++;
 	}
 	
 	/** Recursively deletes a file or directory */
@@ -1866,7 +1884,7 @@ public class Table implements Serializable{
     final void finishLoading(FemtoDB database)
     {
     	this.database = database;
-		tableDirectory = database.path + File.separator + Integer.toString(tableNumber);
+		tableDirectory = database.getPath() + File.separator + Long.toString(tableNumber);
     
 		if(operational)
     	{
@@ -1902,7 +1920,7 @@ public class Table implements Serializable{
 		retval = retval + "removeOccupancy: " 		+ removeOccupancy + "\n";
 		retval = retval + "combineOccupancyRatio: " + combineOccupancyRatio + "\n";
 		retval = retval + "combineOccupancy: " 		+ combineOccupancy + "\n";
-		retval = retval + "nextFileNumber: " 		+ nextFileNumber + "\n";
+		retval = retval + "nextFileNumber: " 		+ nextUnusedFileNumber + "\n";
 		retval = retval + "cacheSize: " + cacheSize + "\n";
 		retval = retval + "cachePages: " + cachePages + "\n";
 		int len = columnNames.length;

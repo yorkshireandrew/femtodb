@@ -1,7 +1,6 @@
 package femtodb;
 
 import java.io.File;
-import java.io.IOException;
 
 import femtodbexceptions.FemtoDBIOException;
 import femtodbexceptions.FemtoDBInvalidValueException;
@@ -16,7 +15,7 @@ public class TableDebug1 {
 	void execute()
 	{
 		FemtoDB fdb = new FemtoDB();
-		fdb.path = "debug1";
+		fdb.setPath("debug1");
 		
 		// make a fresh directory
 		File f = new File("debug1");
@@ -42,7 +41,7 @@ public class TableDebug1 {
 			BuffWrite.writeInt(toInsert, 10, 11);
 			
 			System.out.println("Starting First insert");
-			tut.insertOrIgnoreByteArrayByPrimaryKey(1L, toInsert, 2L);
+			tut.insertOrIgnoreByteArrayByPrimaryKey(1L, toInsert);
 			System.out.println("Finished First insert");
 
 			// display table
@@ -55,7 +54,7 @@ public class TableDebug1 {
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (11 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert);
 			}
 			
 			// display table
@@ -63,13 +62,13 @@ public class TableDebug1 {
 			System.out.println(tut.cacheToString());
 
 			System.out.println("Delete 8");
-			tut.deleteByPrimaryKey(8L, 1000);
+			tut.deleteByPrimaryKey(8L);
 			
 			// display table
 			System.out.println(tut);
 			System.out.println(tut.cacheToString());	
 			
-			byte[] res = tut.seekByteArray(13L, 2001);
+			byte[] res = tut.seekByteArray(13L);
 			int readValue = BuffRead.readInt(res, 10);
 			System.out.println("read = " + readValue);
 			
@@ -88,7 +87,7 @@ public class TableDebug1 {
 	void execute2()
 	{
 		FemtoDB fdb = new FemtoDB();
-		fdb.path = "debug1";
+		fdb.setPath("debug1");
 		
 		// make a fresh directory
 		File f = new File("debug1");
@@ -114,7 +113,7 @@ public class TableDebug1 {
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert);
 			}
 			
 			// display table
@@ -125,7 +124,7 @@ public class TableDebug1 {
 			// read it back
 			for(int x = 1; x < 15; x++)
 			{
-				toInsert = tut.seekByteArray((long)x, 1000 + x);
+				toInsert = tut.seekByteArray((long)x);
 				if(toInsert == null)System.out.println("" + x + " was null!");
 				System.out.println("read =" + BuffRead.readInt(toInsert, 10));
 			}	
@@ -133,7 +132,7 @@ public class TableDebug1 {
 			// delete it all
 			for(int x = 1; x < 15; x++)
 			{
-				tut.deleteByPrimaryKey(x, 2000+x);
+				tut.deleteByPrimaryKey(x);
 			}	
 			
 			System.out.println("finished delete");
@@ -148,20 +147,20 @@ public class TableDebug1 {
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (3 * x));	
-				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(x+1));
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert);
 			}
 			
 			// read it back
 			for(int x = 1; x < 15; x++)
 			{
-				toInsert = tut.seekByteArray(x, 3000 + x);
+				toInsert = tut.seekByteArray(x);
 				System.out.println("read2 =" + BuffRead.readInt(toInsert, 10));
 			}				
 			
 			// delete it all backwards
 			for(int x = 14; x >= 1; x--)
 			{
-				tut.deleteByPrimaryKey(x, 4000+x);
+				tut.deleteByPrimaryKey(x);
 			}			
 			
 			// display table

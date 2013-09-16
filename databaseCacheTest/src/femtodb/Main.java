@@ -1,12 +1,9 @@
 package femtodb;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
-
-import com.sun.xml.internal.messaging.saaj.util.ByteInputStream;
 import com.sun.xml.internal.messaging.saaj.util.ByteOutputStream;
 
 // Int		4

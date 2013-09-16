@@ -16,7 +16,6 @@ public class BuffPerformanceTest {
 		long t1,t2,t3,t4,t5,t6,t7,t8,t9,t10;
 		int INNER = 1000;
 		int SIZE = 100000;
-		byte[] buffer = new byte[8];
 		
 		Long[] longArray = new Long[SIZE];
 		
