@@ -16,7 +16,12 @@ import femtodbexceptions.FemtoDBInvalidValueException;
 import femtodbexceptions.FemtoDBPrimaryKeyUsedException;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -27,7 +32,6 @@ public class TableTest {
 	public void setUp() throws Exception {
 
 	}
-	
 	
 	@After
 	public void tearDown() throws Exception {	
@@ -851,6 +855,114 @@ public class TableTest {
 			fail();
 		} catch (FemtoDBIOException e) {
 			fail();
+		}
+	}
+	
+	@Test
+	public void testSerialisation()
+	{
+		FemtoDB fdb = new FemtoDB();
+		fdb.path = "debug1";
+		
+		// make a fresh directory
+		File f = new File("debug1");
+		if(f.exists())f.delete();
+		f.mkdir();
+		
+		// create the table
+		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		tut.setRowsPerFile(5);
+		tut.setRemoveOccupancyRatio(0.4);
+		tut.setCombineOccupancyRatio(0.8);
+		tut.addIntegerColumn("payload");
+		tut.setCacheSize(140);
+		try {
+			tut.makeOperational();
+			
+			// first insert
+			byte[] toInsert = new byte[8+2+4];
+			
+			// insert a load of stuff
+			for(int x = 1; x < 15; x++)
+			{
+				BuffWrite.writeLong(toInsert, 0, (long)x);
+				BuffWrite.writeShort(toInsert, 8, (10 * x));
+				BuffWrite.writeInt(toInsert, 10, (2 * x));	
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert, (long)(x+1));
+			}
+		} catch (FemtoDBInvalidValueException e) {
+			fail();
+		} catch (FemtoDBIOException e) {
+			fail();
+		}
+		
+		// save the table
+		try {
+			tut.flushCache();
+			
+			File blah = new File("test_table");
+			if(blah.exists())blah.delete();
+			FileOutputStream os = new FileOutputStream("test_table");
+			ObjectOutputStream oos = new ObjectOutputStream(os);
+			oos.writeObject(tut);
+			oos.close();	
+		} catch (FileNotFoundException e) {
+			fail();
+		} catch (IOException e) {
+			System.out.println(e);
+			e.printStackTrace();
+			fail();
+		} catch (FemtoDBIOException e) {
+			fail();
+		}
+		
+		// ensure old database reference is gone
+		fdb = null;
+		
+		// move the database data to a new location
+		File f2 = new File("debug1");
+		File f3 = new File("debug2");
+		if(f3.exists())tut.recursiveDelete(f3);
+		
+		assertTrue(f2.renameTo( new File("debug2")));
+		
+		// create a new database pointing to the new location
+		FemtoDB fdb2 = new FemtoDB();
+		fdb2.path = "debug2";
+		
+		
+		// create a new table
+		Table tut2 = null;
+		try {
+			FileInputStream is = new FileInputStream("test_table");
+			ObjectInputStream ois = new ObjectInputStream(is);
+			tut2 = (Table)ois.readObject();
+			ois.close();	
+		} catch (FileNotFoundException e) {
+			fail();
+		} catch (IOException e) {
+			fail();
+		} catch (ClassNotFoundException e) {
+			fail();
+		}
+		
+		tut2.finishLoading(fdb2);
+		System.out.println(" reading tablecontents back after save load");
+		// read contents back
+		try{
+			byte[] readBack;
+			for(int x = 1; x < 15; x++)
+			{
+				readBack = tut2.seekByteArray((long)x, 1000 + x);
+				int readInt = BuffRead.readInt(readBack, 10);
+				assertEquals((2*x), readInt);
+			}		
+		}
+		catch(FemtoDBIOException e)
+		{
+			System.out.println(e);
+			e.printStackTrace();
+			fail();			
 		}
 	}
 	

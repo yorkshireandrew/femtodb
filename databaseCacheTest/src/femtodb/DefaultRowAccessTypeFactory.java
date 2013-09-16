@@ -1,6 +1,9 @@
 package femtodb;
 
-public class DefaultRowAccessTypeFactory implements RowAccessTypeFactory {
+import java.io.Serializable;
+
+public class DefaultRowAccessTypeFactory implements RowAccessTypeFactory, Serializable {
+	private static final long serialVersionUID = 1L;
 
 	DefaultRowAccessTypeFactory(int byteArrayLength)
 	{}

@@ -4,32 +4,33 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.ConcurrentModificationException;
 import java.util.List;
-
 import femtodbexceptions.FemtoDBConcurrentModificationException;
 import femtodbexceptions.FemtoDBIOException;
 import femtodbexceptions.FemtoDBInvalidValueException;
 import femtodbexceptions.FemtoDBPrimaryKeyNotFoundException;
 import femtodbexceptions.FemtoDBPrimaryKeyUsedException;
 
-public class Table {
+public class Table implements Serializable{
+	private static final long serialVersionUID = 1L;
+	
 	static final int 			DEFAULT_FILE_SIZE_IN_BYTES				= 3000;
 	static final int 			DEFAULT_CACHE_SIZE_IN_BYTES				= 1000000;
 	static final double			DEFAULT_REMOVE_OCCUPANCY_RATIO			= 0.2;
 	static final double 		DEFAULT_ALLOW_COMBINE_OCCUPANCY_RATIO  	= 0.9;
 	static final long			NOT_MODIFIED_LRU_BOOST					= 10;
 	static final long			OVER_HALF_FULL_LRU_BOOST				= 5;
-	private static final long  	PK_CACHE_NOT_SET 						= Long.MAX_VALUE;
+	static final long  			PK_CACHE_NOT_SET 						= Long.MAX_VALUE;
 	static final short 			FLAG_CACHE_NOT_SET 						= Short.MIN_VALUE;
 	
-	private final int			ROW_WRITELOCK							= 0x8000;
-	private final int			ROW_READLOCK							= 0x4000;
+	static final int			ROW_WRITELOCK							= 0x8000;
+	static final int			ROW_READLOCK							= 0x4000;
 
 	/** The database that contains this table */
-	final FemtoDB				database;
+	private transient FemtoDB	database;
 	
 	/** The name of the table, shown in exceptions */
 	private final String 		name;
@@ -64,7 +65,7 @@ public class Table {
 	private int					combineOccupancy;
 	
 	/** Has the table been made operational */
-	private boolean				tableIsOperational;
+	private boolean				operational;
 	
 	/** The next free file number, so the naming of each file is unique */
 	private long				nextFileNumber;
@@ -103,13 +104,10 @@ public class Table {
 	private transient short[]			flagCacheEraser;
 	
 	/** Array holding FileMetadata references explaining what is in each cache page, or null if the page is already free */
-	private FileMetadata[]				cacheContents;	
+	private transient FileMetadata[]	cacheContents;	
 			
 	/** The meta data on all the tables files, holding what is in each file and its cache status */
 	private List<FileMetadata>			fileMetadata;	
-	
-	/** Used by insertCore for insertOrUpdate, holds the found row in the cache page that needs updating, so a second binary search is not required */
-	private int 						rowToUpdate;
 	
 	// ***************** RowAccessTypeFactory ***************************
 	private boolean rowAccessTypeFactorySet = false;
@@ -135,13 +133,13 @@ public class Table {
 		
 		cacheSizeSet 		= false;
 		rowsPerFileSet 		= false;
-		tableIsOperational 	= false;
+		operational 	= false;
 		
 		removeOccupancyRatio 	= DEFAULT_REMOVE_OCCUPANCY_RATIO;
 		combineOccupancyRatio 	= DEFAULT_ALLOW_COMBINE_OCCUPANCY_RATIO;
 		
 		// add primary key column
-		if(primaryKeyName == null)primaryKeyName="primarykey";
+		if(primaryKeyName == null)primaryKeyName="primary_key";
 		addLongColumn(primaryKeyName);
 		addShortColumn("femto_db_status");
 	}
@@ -157,7 +155,7 @@ public class Table {
 	/** Adds a byte column to the table */
 	final void addByteColumn(String columnName)
 	{
-		if(tableIsOperational) return;
+		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
 		columnByteOffset = addToArray(columnByteOffset,tableWidth);
 		columnByteWidth = addToArray(columnByteWidth,1);
@@ -167,7 +165,7 @@ public class Table {
 	/** Adds a Boolean column to the table, its true width is one byte */
 	final void addBooleanColumn(String columnName)
 	{
-		if(tableIsOperational) return;
+		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
 		columnByteOffset = addToArray(columnByteOffset,tableWidth);
 		columnByteWidth = addToArray(columnByteWidth,1);
@@ -177,7 +175,7 @@ public class Table {
 	/** Adds a byte array column to the table, its true width is width + 4 bytes to encode length*/
 	final void addBytesColumn(String columnName, int width) 
 	{
-		if(tableIsOperational) return;
+		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
 		columnByteOffset = addToArray(columnByteOffset,tableWidth);
 		int trueWidth = 4 + width;
@@ -188,7 +186,7 @@ public class Table {
 	/** Adds a Short column to the table, its true width is 2 bytes */
 	final void addShortColumn(String columnName)
 	{
-		if(tableIsOperational)return;
+		if(operational)return;
 		columnNames = addToArray(columnNames, columnName);
 		columnByteOffset = addToArray(columnByteOffset,tableWidth);
 		columnByteWidth = addToArray(columnByteWidth,2);
@@ -198,7 +196,7 @@ public class Table {
 	/** Adds a Character column to the table, its true width is 2 bytes */
 	final void addCharColumn(String columnName)
 	{
-		if(tableIsOperational)return;
+		if(operational)return;
 		columnNames = addToArray(columnNames, columnName);
 		columnByteOffset = addToArray(columnByteOffset,tableWidth);
 		columnByteWidth = addToArray(columnByteWidth,2);
@@ -208,7 +206,7 @@ public class Table {
 	/** Adds a Integer column to the table, its true width is 2 bytes */
 	final void addIntegerColumn(String columnName)
 	{
-		if(tableIsOperational)return;
+		if(operational)return;
 		columnNames = addToArray(columnNames, columnName);
 		columnByteOffset = addToArray(columnByteOffset,tableWidth);
 		columnByteWidth = addToArray(columnByteWidth,4);
@@ -218,7 +216,7 @@ public class Table {
 	/** Adds a Long column to the table, its true width is 2 bytes */
 	final void addLongColumn(String columnName)
 	{
-		if(tableIsOperational) return;
+		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
 		columnByteOffset = addToArray(columnByteOffset,tableWidth);
 		columnByteWidth = addToArray(columnByteWidth,8);
@@ -228,7 +226,7 @@ public class Table {
 	/** Adds a Float column to the table, its true width is 2 bytes */
 	final void addFloatColumn(String columnName)
 	{
-		if(tableIsOperational) return;
+		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
 		columnByteOffset = addToArray(columnByteOffset,tableWidth);
 		columnByteWidth = addToArray(columnByteWidth,4);
@@ -238,7 +236,7 @@ public class Table {
 	/** Adds a Double column to the table, its true width is 2 bytes */
 	final void addDoubleColumn(String columnName) 
 	{
-		if(tableIsOperational) return;
+		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
 		columnByteOffset = addToArray(columnByteOffset,tableWidth);
 		columnByteWidth = addToArray(columnByteWidth,8);
@@ -248,7 +246,7 @@ public class Table {
 	/** Adds a Char array column to the table, its true width is width + 2 bytes to encode length*/
 	final void addCharsColumn(String columnName, int width)
 	{
-		if(tableIsOperational) return;
+		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
 		columnByteOffset = addToArray(columnByteOffset,tableWidth);
 		int trueWidth = 2 + width;
@@ -259,7 +257,7 @@ public class Table {
 	/** Adds a String column to the table, its true width is width + 2 bytes, to encode the length. It is important to note the string gets stored in modified UTF format so the available width in characters may be less than the width parameter */
 	final void addStringColumn(String columnName, int width) 
 	{
-		if(tableIsOperational) return;
+		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
 		columnByteOffset = addToArray(columnByteOffset,tableWidth);
 		int trueWidth = 2 + width;
@@ -290,14 +288,14 @@ public class Table {
 
 	final void setRowsPerFile(int rows)
 	{
-		if(tableIsOperational) return;
+		if(operational) return;
 		rowsPerFile = rows;
 		rowsPerFileSet = true;
 	}
 	
 	final void setCacheSize(int cacheSize)
 	{
-		if(tableIsOperational) return;
+		if(operational) return;
 		this.cacheSize = cacheSize;
 		cacheSizeSet = true;
 	}
@@ -309,8 +307,8 @@ public class Table {
 	/** Allocates memory and creates first file making the table operational */
 	final void makeOperational()throws FemtoDBInvalidValueException, FemtoDBIOException
 	{
-		if(tableIsOperational) return;
-		tableIsOperational = true;
+		if(operational) return;
+		operational = true;
 		
 		long actualFileSize;
 		
@@ -362,6 +360,60 @@ public class Table {
 		cachePages 	= cacheSize / (int)actualFileSize;
 		cacheSize 	= cachePages * (int)actualFileSize;
 		
+		allocateMemory();
+		
+		// Initialise nextFileNumber for creating unique filenames
+		nextFileNumber = 0;
+		
+		// Create the directory
+		tableDirectory = database.path + File.separator + Integer.toString(tableNumber);
+		File f = new File(tableDirectory);
+		if(f.exists()){recursiveDelete(f);}
+		if(!f.mkdir())
+		{
+			throw new FemtoDBIOException("Table " + name + " was unable to create directory " + tableDirectory);
+		}
+		
+		// Fill the fileMetadata with a single entry referring to an empty file 
+		fileMetadata = new ArrayList<FileMetadata>();
+		FileMetadata firstFile = new FileMetadata(
+				this,
+				nextFilenumber(), 
+				Long.MIN_VALUE, // ensure the first primary key added falls into this file
+				Long.MAX_VALUE,
+				Long.MIN_VALUE,	// ensure first value in table inserts after the zero rows
+				Long.MIN_VALUE,
+				false,			// the new file entry is 'cached' in first cache entry. This cache is then flushed to create the first file
+				0, 				// associate with first cache entry
+				0,				// contains no rows
+				0L				// modificationServiceNumber initially zero
+		);
+		
+		// make firstFile appear to be loaded into the first cache page and will be written to a file when flushed
+		firstFile.cached = true;
+		firstFile.cacheIndex = 0;
+		firstFile.modified = true;
+		
+		// add firstFile into fileMetadata list
+		fileMetadata.add(firstFile);
+		
+		// Finally make firstFile appear to be in the cache by completing a cachePageContents entry
+		cacheContents[0] = firstFile;
+		
+		// Directly flush the first cache entry to create a file 
+		// This is needed in case a shutdown-restart happens before
+		// the first entry gets inserted in the table.
+		freeCachePage(0);
+		
+		// create the RowAccessTypeFactory
+		if(!rowAccessTypeFactorySet)
+		{
+			rowAccessTypeFactory = new DefaultRowAccessTypeFactory(tableWidth);
+		}
+	}	
+	
+	private void allocateMemory()
+	{
 		// allocate memory for the cache
 		try{
 			cache = new byte[cacheSize];
@@ -414,57 +466,15 @@ public class Table {
 		}
 		
 		// set the cache page contents
-		cacheContents = new FileMetadata[cachePages];
-		
-		// Initialise nextFileNumber for creating unique filenames
-		nextFileNumber = 0;
-		
-		// Create the directory
-		tableDirectory = database.path + File.separator + Integer.toString(tableNumber);
-		File f = new File(tableDirectory);
-		if(f.exists()){recursiveDelete(f);}
-		if(!f.mkdir())
+		try{
+			// Do not need to fill as null indicates the cache page is free
+			cacheContents = new FileMetadata[cachePages];
+		}catch(OutOfMemoryError e)
 		{
-			throw new FemtoDBIOException("Table " + name + " was unable to create directory " + tableDirectory);
-		}
-		
-		// Fill the fileMetadata with a single entry referring to an empty file 
-		fileMetadata = new ArrayList<FileMetadata>();
-		FileMetadata firstFile = new FileMetadata(
-				this,
-				nextFilenumber(), 
-				Long.MIN_VALUE, // ensure the first primary key added falls into this file
-				Long.MAX_VALUE,
-				Long.MIN_VALUE,	// ensure first value in table inserts after the zero rows
-				Long.MIN_VALUE,
-				false,			// the new file entry is 'cached' in first cache entry. This cache is then flushed to create the first file
-				0, 				// associate with first cache entry
-				0,				// contains no rows
-				0L				// modificationServiceNumber initially zero
-		);
-		
-		// make firstFile appear to be loaded into the first cache page and will be written to a file when flushed
-		firstFile.cached = true;
-		firstFile.cacheIndex = 0;
-		firstFile.modified = true;
-		
-		// add firstFile into fileMetadata list
-		fileMetadata.add(firstFile);
-		
-		// Finally make firstFile appear to be in the cache by completing a cachePageContents entry
-		cacheContents[0] = firstFile;
-		
-		// Directly flush the first cache entry to create a file 
-		// This is needed in case a shutdown-restart happens before
-		// the first entry gets inserted in the table.
-		freeCachePage(0);
-		
-		// create the RowAccessTypeFactory
-		if(!rowAccessTypeFactorySet)
-		{
-			rowAccessTypeFactory = new DefaultRowAccessTypeFactory(tableWidth);
-		}
-	}	
+			// re-throw any memory exception providing more information
+			throw new OutOfMemoryError("Table " + name + " was unable to allocate its cache contents array");
+		}			
+	}
 	
 	//*******************************************************************
 	//*******************************************************************
@@ -1113,8 +1123,8 @@ public class Table {
 	final boolean isRowReadLockedLowLevel(int page, int row)
 	{
 		
-		int src1 = page * rowsPerFile + rowToUpdate;
-		int src2 = page * fileSize + rowToUpdate * tableWidth;
+		int src1 = page * rowsPerFile + row;
+		int src2 = page * fileSize + row * tableWidth;
 		short tablesCurrentFlags = flagCache[src1];
 		if(tablesCurrentFlags == FLAG_CACHE_NOT_SET)
 		{
@@ -1126,8 +1136,8 @@ public class Table {
 	
 	final boolean isRowWriteLockedLowLevel(int page, int row)
 	{
-		int src1 = page * rowsPerFile + rowToUpdate;
-		int src2 = page * fileSize + rowToUpdate * tableWidth;
+		int src1 = page * rowsPerFile + row;
+		int src2 = page * fileSize + row * tableWidth;
 		short tablesCurrentFlags = flagCache[src1];
 		if(tablesCurrentFlags == FLAG_CACHE_NOT_SET)
 		{
@@ -1378,7 +1388,6 @@ public class Table {
 		
 		if(overwritePrevention)
 		{
-			rowToUpdate = testIndex;
 			return -1;
 		}
 		
@@ -1757,6 +1766,7 @@ public class Table {
 		else
 		{
 			System.out.println("fmd " + fmd.filename + " says it isnt cached so loading");
+			System.out.println("fmd " + fmd.hashCode());
 			return loadFileIntoCache(fmd);
 		}
 	}
@@ -1804,7 +1814,7 @@ public class Table {
 	}
 	
 	/** Recursively deletes a file or directory */
-	private void recursiveDelete(File f)
+	void recursiveDelete(File f)
 	{
 		if(f != null)
 		{
@@ -1834,6 +1844,41 @@ public class Table {
 	//*******************************************************************
 	//*******************************************************************
 	//*******************************************************************
+	
+	
+	
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+	//         SERIALISATION METHODS
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+    final void flushCache() throws FemtoDBIOException
+    {
+    	if(!operational)return;
+    	for(int page = 0; page < cachePages; page++)
+    	{
+    		freeCachePage(page);
+    	}	
+    }
+	
+    final void finishLoading(FemtoDB database)
+    {
+    	this.database = database;
+		tableDirectory = database.path + File.separator + Integer.toString(tableNumber);
+    
+		if(operational)
+    	{
+    		allocateMemory();
+    		System.out.println(tableDirectory);
+    		for(int x = 0; x < fileMetadata.size(); x++)
+    		{
+    			fileMetadata.get(x).finishLoading(this);
+    			System.out.println(fileMetadata.get(x).hashCode());
+    		}
+    	}	
+    }
 	
 	
 	
@@ -1966,7 +2011,7 @@ public class Table {
 	}
 
 	final void setRemoveOccupancyRatio(double removeOccupancyRatio) {
-		if(tableIsOperational) return;
+		if(operational) return;
 		this.removeOccupancyRatio = removeOccupancyRatio;
 	}
 
@@ -1975,7 +2020,7 @@ public class Table {
 	}
 
 	final void setCombineOccupancyRatio(double combineOccupancyRatio) {
-		if(tableIsOperational) return;
+		if(operational) return;
 		this.combineOccupancyRatio = combineOccupancyRatio;
 	}
 

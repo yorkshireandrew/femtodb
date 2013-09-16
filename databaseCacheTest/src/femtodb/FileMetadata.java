@@ -1,10 +1,13 @@
 package femtodb;
 
 import java.io.File;
+import java.io.Serializable;
 
-public class FileMetadata {
+public class FileMetadata implements Serializable{
+	private static final long serialVersionUID = 1L;
+	
 	/** Table */
-	Table				owner;
+	transient Table		owner;
 	/** Filename. This gets constructed from file number and owner */
 	transient String	filename;
 	/** Value used to identify the file on the file system */
@@ -31,7 +34,7 @@ public class FileMetadata {
 	long 				lastUsedServiceNumber;
 	
 	/** Set true if the cache page has been modified since it was loaded from disk */
-	boolean	modified;
+	boolean				modified;
 	
 	FileMetadata(
 			Table owner,
@@ -75,4 +78,15 @@ public class FileMetadata {
 		retval = retval + "lastUsedServiceNumber: " + lastUsedServiceNumber;
 		return retval;	
 	}
+	
+    final void finishLoading(Table newOwner)
+    {
+		owner 		= newOwner;
+    	filename 	= owner.getTableDirectory() + File.separator +
+						Long.toString(filenumber);
+    	System.out.println("Filenumber " + filenumber + " setting filename to " + filename);
+    	System.out.println(this.hashCode());
+    	cached 		= false;
+		cacheIndex 	= -1;
+    }
 }
