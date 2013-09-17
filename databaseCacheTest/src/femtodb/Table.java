@@ -377,7 +377,7 @@ public class Table implements Serializable{
 		// Create the directory
 		tableDirectory = database.getPath() + File.separator + Long.toString(tableNumber);
 		File f = new File(tableDirectory);
-		if(f.exists()){recursiveDelete(f);}
+		if(f.exists()){FileUtils.recursiveDelete(f);}
 		if(!f.mkdir())
 		{
 			throw new FemtoDBIOException("Table " + name + " was unable to create directory " + tableDirectory);
@@ -1840,29 +1840,7 @@ public class Table implements Serializable{
 		return nextUnusedFileNumber++;
 	}
 	
-	/** Recursively deletes a file or directory */
-	static void recursiveDelete(File f)
-	{
-		if(f != null)
-		{
-			if(f.exists())
-			{
-				if(f.isDirectory())
-				{
-					File[] files = f.listFiles();
-					for(File file: files)
-					{
-						recursiveDelete(file);
-					}
-					f.delete();
-				}
-				else
-				{
-					f.delete();
-				}
-			}
-		}
-	}
+
 	
 	//*******************************************************************
 	//*******************************************************************
@@ -1916,12 +1894,25 @@ public class Table implements Serializable{
     		File sourceFile = new File(fmd.filename);
     		String fullDestString = destString + File.separator + Long.toString(fmd.filenumber);
     		File destFile = new File(fullDestString);
-    		FileCopy.copyFile(sourceFile, destFile);
+    		FileUtils.copyFile(sourceFile, destFile);
     	}
     }
 	
-	
-	
+	boolean validateTable(String path)
+	{
+		String tableDirectoryString = path + File.separator + Long.toString(tableNumber);
+    	int tableWidthL = tableWidth;
+		for(FileMetadata fmd : fileMetadata)
+    	{
+    		String fileString = tableDirectoryString + File.separator + Long.toString(fmd.filenumber);
+    		File fileToCheck = new File(fileString);
+    		if( !fileToCheck.exists() )return false;
+    		long fileToCheckSize = fileToCheck.length();
+    		long expectedSize = fmd.rows * tableWidthL;
+    		if( fileToCheckSize != expectedSize )return false;
+    	}
+		return true;	
+	}
 	
 	//*******************************************************************
 	//*******************************************************************

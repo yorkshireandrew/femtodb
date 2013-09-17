@@ -65,8 +65,8 @@ public class FemtoDB implements Serializable{
 		
 
 		// Decide if to write to ping or pong
-		long 	validPingDatabaseStart = getDatabaseStart(pingDirectoryString);	
-		long 	validPongDatabaseStart = getDatabaseStart(pongDirectoryString);
+		long 	validPingDatabaseStart = getDatabaseStart(pingDirectoryString, false);	
+		long 	validPongDatabaseStart = getDatabaseStart(pongDirectoryString, false);
 		boolean usePong = false;	
 		if(validPingDatabaseStart == -1L)
 		{
@@ -123,7 +123,7 @@ public class FemtoDB implements Serializable{
 		if(path == null)throw new FemtoDBIOException("Database " + name + " backup was attempted before the database path was set");
 		// remove the old directory if it exists and generate a new one
 		File directoryFile = new File(destString);
-		Table.recursiveDelete(directoryFile);
+		FileUtils.recursiveDelete(directoryFile);
 		directoryFile.mkdirs();
 		
 		// add a start file
@@ -301,7 +301,8 @@ public class FemtoDB implements Serializable{
 	// **************************************************
 	// **************************************************	
 	
-	static FemtoDB open(String path) throws FileNotFoundException, FemtoDBIOException
+	/** Returns the database at the location given by the path argument if it exists */
+	public static FemtoDB open(String path) throws FileNotFoundException, FemtoDBIOException
 	{
 		String databaseFileString = path + File.separator + "database";	
 		File databaseFile = new File(databaseFileString);
@@ -325,6 +326,93 @@ public class FemtoDB implements Serializable{
 		}	
 	}
 	
+	/** Returns the database at the location given by the path argument. If it appears to be corrupt or was incorrectly shutdown then
+	 * the ping and pong backups present in the directory given by the backup argument are used to attempt a database recovery.  */
+	public static FemtoDB open(String path, String backup) throws FileNotFoundException, FemtoDBIOException
+	{
+		// Open the database if it is not corrupt or was incorrectly shutdown
+		long databaseStart = getDatabaseStart(path,true);
+		if(databaseStart != -1L)return open(path);
+		if(backup == null)throw new FemtoDBIOException("Failed to open the database. The database at " + path + " appears to be corrupt or missing and the backup location given was null");				
+		// The database looks corrupt so attempt to recover using the most recent backup
+		String pingDirectoryString = backup + File.separator + "ping";
+		String pongDirectoryString = backup + File.separator + "ping";
+		long pingStart = getDatabaseStart(pingDirectoryString,true);
+		long pongStart = getDatabaseStart(pongDirectoryString,true);
+		boolean pingOK = (pingStart != -1);
+		boolean pongOK = (pongStart != -1);
+		File databaseFile = new File(path);
+		File pingFile = new File(pingDirectoryString);
+		File pongFile = new File(pongDirectoryString);
+		
+		if( pingOK && pongOK )
+		{
+			if(pingStart > pongStart)
+			{
+				// recover using ping			
+				try {
+					FileUtils.recursiveCopy(databaseFile,pingFile);
+					return open(path);				
+				} 
+				catch (IOException e)
+				{
+					// ping failed try pong
+					try {
+						FileUtils.recursiveCopy(databaseFile,pongFile);
+						return open(path);
+					} catch (IOException e1) {
+						throw new FemtoDBIOException("Failed to open the database. The database appears to be corrupt, both the backups appear to be functional but threw IOExceptions whilst copying.", e1);
+					}					
+				}
+			}
+			else
+			{
+				// recover using pong			
+				try {
+					FileUtils.recursiveCopy(databaseFile,pongFile);
+					return open(path);				
+				} 
+				catch (IOException e)
+				{
+					// pong failed try ping
+					try {
+						FileUtils.recursiveCopy(databaseFile,pingFile);
+						return open(path);
+					} catch (IOException e1) {
+						throw new FemtoDBIOException("Failed to open the database. The database appears to be corrupt, both the backups appear to be functional but threw IOExceptions whilst copying.", e1);
+					}					
+				}
+			}//end of pingStart > pongStart if-else
+		}// end of pingOK && pongOK if
+			
+		if(pingOK && (!pongOK))
+		{
+			// recover using ping only		
+			try {
+				FileUtils.recursiveCopy(databaseFile,pingFile);
+				return open(path);				
+			} 
+			catch (IOException e)
+			{
+				throw new FemtoDBIOException("Failed to open the database. The database and pong backup appear to be corrupt, the ping backup appear to be functional but threw IOExceptions whilst copying.", e);				
+			}
+		}
+		
+		if((!pingOK) && pongOK)
+		{
+			// recover using pong only		
+			try {
+				FileUtils.recursiveCopy(databaseFile,pongFile);
+				return open(path);				
+			} 
+			catch (IOException e)
+			{
+				throw new FemtoDBIOException("Failed to open the database. The database and ping backup appear to be corrupt, the pong backup appear to be functional but threw IOExceptions whilst copying.", e);				
+			}
+		}	
+		throw new FemtoDBIOException("Failed to open the database. The database and both its backups appear to be corrupted, everythings gone totally foobar. Its time to go get a coffee");
+	}
+	
 	/** Aligns all the paths held in tables to the databases current path */ 
 	private void loadTables()
 	{
@@ -335,7 +423,7 @@ public class FemtoDB implements Serializable{
 	}
 	
 	/** Returns the start time (in milliseconds) of the database or backup at the given path, or -1 if that backup looks corrupt or did not complete. */
-	private long getDatabaseStart(String path)
+	private static long getDatabaseStart(String path, boolean validateFully)
 	{
 		String startFileString		= path + File.separator + "start";
 		String finishFileString		= path + File.separator + "finish";
@@ -372,7 +460,7 @@ public class FemtoDB implements Serializable{
 			is3 = new FileInputStream(databaseFile);
 			ois3 = new ObjectInputStream(is3);
 			backedUpDatabase = (FemtoDB)ois3.readObject();
-			long temp = 0;
+			long temp = 0; // used to force table de-serialisation
 			if(backedUpDatabase != null)
 			{
 					List<Table> backedUpTables = backedUpDatabase.tables;
@@ -380,7 +468,7 @@ public class FemtoDB implements Serializable{
 					// check it is possible to read all the table files
 					for(Table t: backedUpTables)
 					{
-						String tableFileString = path + File.separator + "table" + t.tableNumber;
+						String tableFileString = path + File.separator + "table" + Long.toString(t.tableNumber);
 						InputStream isForTable = null;
 						ObjectInputStream oisForTable = null;
 						Table readTable = null;
@@ -390,6 +478,10 @@ public class FemtoDB implements Serializable{
 							oisForTable = new ObjectInputStream(isForTable);
 							readTable = (Table) oisForTable.readObject();
 							temp += readTable.tableNumber;
+							if(validateFully)
+							{
+								if(!readTable.validateTable(path)){tableReadFault = true;}
+							}
 						}
 						catch(Exception e){tableReadFault = true;}
 						finally

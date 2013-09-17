@@ -919,7 +919,7 @@ public class TableTest {
 		// move the database data to a new location
 		File f2 = new File("debug1");
 		File f3 = new File("debug2");
-		if(f3.exists())tut.recursiveDelete(f3);
+		if(f3.exists())FileUtils.recursiveDelete(f3);
 		
 		assertTrue(f2.renameTo( new File("debug2")));
 		
