@@ -1908,7 +1908,7 @@ public class Table implements Serializable{
     	}	
     }
     
-    final void backupFully(String destString) throws IOException
+    final void backupCompletely(String destString) throws IOException
     {
     	
     	for(FileMetadata fmd : fileMetadata)

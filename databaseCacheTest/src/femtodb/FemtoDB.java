@@ -22,6 +22,7 @@ public class FemtoDB implements Serializable{
 	private List<Table> 		tables;
 	private long 				nextUnusedTableNumber;
 	
+	/** Constructs a database requiring a name as an argument. The setPath method must be also called before the database can be used */
 	public FemtoDB(String name)
 	{
 		this.name				= name;
@@ -30,6 +31,7 @@ public class FemtoDB implements Serializable{
 		nextUnusedTableNumber 	= 0L;
 	}
 	
+	/** Creates a new table in the database, requiring a name for the table and (optionally) a name for the primary key column */
 	public Table createTable(String name, String primaryKeyName)
 	{
 		long tableNumber 	= nextUnusedTableNumber++;
@@ -38,8 +40,7 @@ public class FemtoDB implements Serializable{
 		return newTable;
 	}
 	
-
-	
+	/** Creates a backup the database to the path given as an argument. The method automatically creates ping and pong subdirectories if they do not exist. If a backup exists the method will overwrite the oldest (or the most invalid) ping or pong backup. */
 	public void backup(String path) throws FileNotFoundException, FemtoDBIOException
 	{
 		// ensure the path exists
@@ -139,16 +140,23 @@ public class FemtoDB implements Serializable{
 		generateFinishFile(destString);
 	}
 	
-	private void backupCompletelyTable(Table t, String pathToDatabase, String destPath) throws FemtoDBIOException
+
+	 /** Completely backs up of a given table in the database to a destination. It requires the paths for the source and destination databases to be given as arguments
+	 * @param t	The table object in the database that needs to be backed up.
+	 * @param sourceDatabasePath The source database path.
+	 * @param destDatabasePath The destination database path.
+	 * @throws FemtoDBIOException
+	 */
+	private void backupCompletelyTable(Table t, String sourceDatabasePath, String destDatabasePath) throws FemtoDBIOException
 	{
-		generateTableFile(t,destPath);
-		String tableDirectoryString = destPath + File.separator + Long.toString(t.tableNumber);
+		generateTableFile(t,destDatabasePath);
+		String tableDirectoryString = destDatabasePath + File.separator + Long.toString(t.tableNumber);
 		File tableDirectoryFile = new File(tableDirectoryString);
 		if(tableDirectoryFile.exists())tableDirectoryFile.delete();
 		tableDirectoryFile.mkdirs();
 		
 		try{
-			t.backupFully(tableDirectoryString);
+			t.backupCompletely(tableDirectoryString);
 		}
 		catch(IOException e){ throw new FemtoDBIOException("Database " + name + " IO Exception whilst backing up table " + t.tableNumber, e);}	
 	}
@@ -159,6 +167,7 @@ public class FemtoDB implements Serializable{
 		backupCompletelyTo(destString);
 	}
 	
+	/** Generates a start file in the directory given by the destString argument, removing the older one if it exists. */
 	private void generateStartFile(String destString) throws FemtoDBIOException
 	{
 		String startFileString = destString + File.separator + "start";
@@ -198,6 +207,7 @@ public class FemtoDB implements Serializable{
 		}
 	}
 	
+	/** Serialises a given table object into to the directory given by the destString argument. It does not serialise the associated tables data files. */
 	private void generateTableFile(Table t, String destString) throws FemtoDBIOException
 	{
 		// add a start file
@@ -234,6 +244,7 @@ public class FemtoDB implements Serializable{
 		}
 	}
 	
+	/** Generates a finish file in the directory given by the destString argument, removing the older one if it exists. */
 	private void generateFinishFile(String destString) throws FemtoDBIOException
 	{
 		String finishFileString = destString + File.separator + "finish";
@@ -273,6 +284,7 @@ public class FemtoDB implements Serializable{
 		}
 	}
 	
+	/** Checks the cache's of all the tables and ensures any unsaved modifications are flushed to disk. To maintain performance it does not free any of the cache by marking the cache page as empty.*/
 	private void flushTheCache() throws FemtoDBIOException
 	{
 		for(Table t: tables)
@@ -301,21 +313,19 @@ public class FemtoDB implements Serializable{
 		try {
 			ObjectInputStream ois = new ObjectInputStream(is);
 			retval = (FemtoDB) ois.readObject();
-			ois.close();		
-			retval.setPath(path);
+			ois.close();
+			retval.setPath(path);				
 			retval.loadTables();
-			retval.generateStartFile(path);
+			return retval;
 
 		} catch (IOException e) {
 			throw new FemtoDBIOException("Unable to read database file " + databaseFileString, e);
 		} catch (ClassNotFoundException e) {
 			throw new FemtoDBIOException("Thats odd, I could not find FemtoDB class when opening database file." + databaseFileString, e);
 		}	
-
-		retval.generateStartFile(path);
-		return retval;
 	}
 	
+	/** Aligns all the paths held in tables to the databases current path */ 
 	private void loadTables()
 	{
 		for(Table t: tables)
@@ -324,6 +334,7 @@ public class FemtoDB implements Serializable{
 		}
 	}
 	
+	/** Returns the start time (in milliseconds) of the database or backup at the given path, or -1 if that backup looks corrupt or did not complete. */
 	private long getDatabaseStart(String path)
 	{
 		String startFileString		= path + File.separator + "start";
@@ -418,10 +429,17 @@ public class FemtoDB implements Serializable{
 
 	// ****************** Getters and Setters **********************
 	
+	/** Returns the path of the database */
 	public final String getPath() {
 		return path;
 	}
+	
+	/** Returns the name of the database */
+	public final String getName() {
+		return name;
+	}
 
+	/** Sets the path of the database and generates a new start file in that location. It does not set the paths in the databases tables */
 	public final void setPath(String path) throws FemtoDBIOException {
 		this.path = path;
 		File pathFile = new File(path);
