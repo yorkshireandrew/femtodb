@@ -607,6 +607,7 @@ public class Table implements Serializable{
 	{	
 		flushCachePage(page);
 		FileMetadata fmd = cacheContents[page];
+		if(fmd == null)return; // cache page must already be free
 		
 		// mark the fmd as not cached and the cachePageContents as now free
 		fmd.cached = false;

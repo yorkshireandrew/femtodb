@@ -159,11 +159,12 @@ public class FemtoDB implements Serializable{
 		backupCompletelyTo(destString);
 	}
 	
-	private void generateStartFile(String destString) throws FileNotFoundException, FemtoDBIOException
+	private void generateStartFile(String destString) throws FemtoDBIOException
 	{
-		// add a start file
 		String startFileString = destString + File.separator + "start";
 		File startFile = new File(startFileString);
+		if(startFile.exists())startFile.delete();
+		
 		OutputStream 		start_os = null;
 		ObjectOutputStream 	start_oos = null; 
 		try {
@@ -233,10 +234,12 @@ public class FemtoDB implements Serializable{
 		}
 	}
 	
-	private void generateFinishFile(String destString) throws FileNotFoundException, FemtoDBIOException
+	private void generateFinishFile(String destString) throws FemtoDBIOException
 	{
 		String finishFileString = destString + File.separator + "finish";
 		File finishFile = new File(finishFileString);
+		if(finishFile.exists())finishFile.delete();
+		
 		OutputStream 		finish_os = null;
 		ObjectOutputStream 	finish_oos = null; 
 		try {
@@ -286,24 +289,31 @@ public class FemtoDB implements Serializable{
 	// **************************************************
 	// **************************************************	
 	
-	static FemtoDB openDatabase(String path) throws FileNotFoundException, FemtoDBIOException
+	static FemtoDB open(String path) throws FileNotFoundException, FemtoDBIOException
 	{
 		String databaseFileString = path + File.separator + "database";	
 		File databaseFile = new File(databaseFileString);
 		if(!databaseFile.exists()) throw new FileNotFoundException("Unable to find database file " + databaseFileString);
+
+		FemtoDB retval = null;
+		
 		InputStream is = new FileInputStream(databaseFile);
 		try {
 			ObjectInputStream ois = new ObjectInputStream(is);
-			FemtoDB retval = (FemtoDB) ois.readObject();
+			retval = (FemtoDB) ois.readObject();
 			ois.close();		
 			retval.setPath(path);
 			retval.loadTables();
-			return retval;		
+			retval.generateStartFile(path);
+
 		} catch (IOException e) {
 			throw new FemtoDBIOException("Unable to read database file " + databaseFileString, e);
 		} catch (ClassNotFoundException e) {
 			throw new FemtoDBIOException("Thats odd, I could not find FemtoDB class when opening database file." + databaseFileString, e);
 		}	
+
+		retval.generateStartFile(path);
+		return retval;
 	}
 	
 	private void loadTables()
@@ -412,8 +422,13 @@ public class FemtoDB implements Serializable{
 		return path;
 	}
 
-	public final void setPath(String path) {
+	public final void setPath(String path) throws FemtoDBIOException {
 		this.path = path;
+		File pathFile = new File(path);
+		if(pathFile.exists())
+		{
+				generateStartFile(path);
+		}
 	}
 	
 	

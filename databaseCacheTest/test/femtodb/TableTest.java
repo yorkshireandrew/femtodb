@@ -37,7 +37,7 @@ public class TableTest {
 	//********************** testWriteReadDelete ***********************
 
 	@Test
-	public void testWriteReadDelete()
+	public void testWriteReadDelete() throws FemtoDBIOException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -187,7 +187,7 @@ public class TableTest {
 	//********************** RAT based testSequentialWriteReadDelete ***********************
 	
 	@Test
-	public void testSequentialWriteReadDeleteByRAT()
+	public void testSequentialWriteReadDeleteByRAT() throws FemtoDBIOException
 	{	
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -284,7 +284,7 @@ public class TableTest {
 	}
 	
 	@Test
-	public void fastIteratorTest()
+	public void fastIteratorTest() throws FemtoDBIOException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -369,7 +369,7 @@ public class TableTest {
 	
 	
 	@Test
-	public void SafeIteratorTest()
+	public void SafeIteratorTest() throws FemtoDBIOException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -454,10 +454,11 @@ public class TableTest {
 	
 
 	
-	/** tests deleteing stuff the interator has travelled over */
+	/** tests deleteing stuff the interator has travelled over 
+	 * @throws FemtoDBIOException */
 
 	@Test
-	public void SafeIteratorTest2()
+	public void SafeIteratorTest2() throws FemtoDBIOException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -566,7 +567,7 @@ public class TableTest {
 	}
 	
 	@Test
-	public void SafeIteratorTest3()
+	public void SafeIteratorTest3() throws FemtoDBIOException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -670,7 +671,7 @@ public class TableTest {
 	}
 
 	@Test
-	public void SafeIteratorTest4()
+	public void SafeIteratorTest4() throws FemtoDBIOException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -750,7 +751,7 @@ public class TableTest {
 	}
 
 	@Test
-	public void SafeIteratorTest5()
+	public void SafeIteratorTest5() throws FemtoDBIOException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -855,7 +856,7 @@ public class TableTest {
 	}
 	
 	@Test
-	public void testSerialisation()
+	public void testSerialisation() throws FemtoDBIOException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");

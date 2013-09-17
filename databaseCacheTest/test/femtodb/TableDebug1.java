@@ -7,12 +7,12 @@ import femtodbexceptions.FemtoDBInvalidValueException;
 
 public class TableDebug1 {
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws FemtoDBIOException {
 		TableDebug1 test = new TableDebug1();
 		test.execute2();
 	}
 	
-	void execute()
+	void execute() throws FemtoDBIOException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -84,7 +84,7 @@ public class TableDebug1 {
 	}
 	
 	
-	void execute2()
+	void execute2() throws FemtoDBIOException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
