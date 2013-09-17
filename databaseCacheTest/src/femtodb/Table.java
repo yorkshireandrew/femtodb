@@ -605,6 +605,18 @@ public class Table implements Serializable{
 	/** Free's a given cache page writing its contents to disk. */
 	private final void freeCachePage(int page) throws FemtoDBIOException
 	{	
+		flushCachePage(page);
+		FileMetadata fmd = cacheContents[page];
+		
+		// mark the fmd as not cached and the cachePageContents as now free
+		fmd.cached = false;
+		fmd.cacheIndex = -1;
+		cacheContents[page] = null;
+	}
+	
+	/** Writes a cache page to disk. */
+	private final void flushCachePage(int page) throws FemtoDBIOException
+	{	
 		FileMetadata fmd = cacheContents[page];
 		System.out.println("freeing cache page " + page);
 		if(fmd == null)return; // cache page must already be free
@@ -623,10 +635,6 @@ public class Table implements Serializable{
 			}
 			catch(IOException e){throw new FemtoDBIOException(e.getMessage(),e);}
 		}
-		// mark the fmd as not cached and the cachePageContents as now free
-		fmd.cached = false;
-		fmd.cacheIndex = -1;
-		cacheContents[page] = null;
 	}
 	
 	//******************************************************
@@ -1832,7 +1840,7 @@ public class Table implements Serializable{
 	}
 	
 	/** Recursively deletes a file or directory */
-	void recursiveDelete(File f)
+	static void recursiveDelete(File f)
 	{
 		if(f != null)
 		{
@@ -1872,12 +1880,13 @@ public class Table implements Serializable{
 	//*******************************************************************
 	//*******************************************************************
 	//*******************************************************************
-    final void flushCache() throws FemtoDBIOException
+ 
+	final void flushCache() throws FemtoDBIOException
     {
     	if(!operational)return;
     	for(int page = 0; page < cachePages; page++)
     	{
-    		freeCachePage(page);
+    		flushCachePage(page);
     	}	
     }
 	
@@ -1896,6 +1905,18 @@ public class Table implements Serializable{
     			System.out.println(fileMetadata.get(x).hashCode());
     		}
     	}	
+    }
+    
+    final void backupFully(String destString) throws IOException
+    {
+    	
+    	for(FileMetadata fmd : fileMetadata)
+    	{
+    		File sourceFile = new File(fmd.filename);
+    		String fullDestString = destString + File.separator + Long.toString(fmd.filenumber);
+    		File destFile = new File(fullDestString);
+    		FileCopy.copyFile(sourceFile, destFile);
+    	}
     }
 	
 	

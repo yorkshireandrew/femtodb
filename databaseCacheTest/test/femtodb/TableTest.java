@@ -39,7 +39,7 @@ public class TableTest {
 	@Test
 	public void testWriteReadDelete()
 	{
-		FemtoDB fdb = new FemtoDB();
+		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
 		
 		// make a fresh directory
@@ -88,7 +88,7 @@ public class TableTest {
 	public void testSequentialWriteReadDelete()
 	{	
 		try{
-		FemtoDB fdb = new FemtoDB();
+		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
 		
 		// make a fresh directory
@@ -189,7 +189,7 @@ public class TableTest {
 	@Test
 	public void testSequentialWriteReadDeleteByRAT()
 	{	
-		FemtoDB fdb = new FemtoDB();
+		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
 		
 		// make a fresh directory
@@ -286,7 +286,7 @@ public class TableTest {
 	@Test
 	public void fastIteratorTest()
 	{
-		FemtoDB fdb = new FemtoDB();
+		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
 		
 		// make a fresh directory
@@ -371,7 +371,7 @@ public class TableTest {
 	@Test
 	public void SafeIteratorTest()
 	{
-		FemtoDB fdb = new FemtoDB();
+		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
 		
 		// make a fresh directory
@@ -459,7 +459,7 @@ public class TableTest {
 	@Test
 	public void SafeIteratorTest2()
 	{
-		FemtoDB fdb = new FemtoDB();
+		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
 		
 		// make a fresh directory
@@ -568,7 +568,7 @@ public class TableTest {
 	@Test
 	public void SafeIteratorTest3()
 	{
-		FemtoDB fdb = new FemtoDB();
+		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
 		
 		// make a fresh directory
@@ -672,7 +672,7 @@ public class TableTest {
 	@Test
 	public void SafeIteratorTest4()
 	{
-		FemtoDB fdb = new FemtoDB();
+		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
 		
 		// make a fresh directory
@@ -752,7 +752,7 @@ public class TableTest {
 	@Test
 	public void SafeIteratorTest5()
 	{
-		FemtoDB fdb = new FemtoDB();
+		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
 		
 		// make a fresh directory
@@ -857,7 +857,7 @@ public class TableTest {
 	@Test
 	public void testSerialisation()
 	{
-		FemtoDB fdb = new FemtoDB();
+		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
 		
 		// make a fresh directory
@@ -923,7 +923,7 @@ public class TableTest {
 		assertTrue(f2.renameTo( new File("debug2")));
 		
 		// create a new database pointing to the new location
-		FemtoDB fdb2 = new FemtoDB();
+		FemtoDB fdb2 = new FemtoDB("debug1");
 		fdb2.setPath("debug2");
 		
 		

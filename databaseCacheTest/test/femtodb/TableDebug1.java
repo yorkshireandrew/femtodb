@@ -14,7 +14,7 @@ public class TableDebug1 {
 	
 	void execute()
 	{
-		FemtoDB fdb = new FemtoDB();
+		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
 		
 		// make a fresh directory
@@ -86,7 +86,7 @@ public class TableDebug1 {
 	
 	void execute2()
 	{
-		FemtoDB fdb = new FemtoDB();
+		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
 		
 		// make a fresh directory
