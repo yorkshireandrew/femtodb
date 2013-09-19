@@ -2,6 +2,7 @@ package femtodb;
 
 import java.io.Serializable;
 
+/** Default implementation of RowAccessTypeFactory creating RowAccessTypes from the heap and normal garbage collection for reclamation */
 public class DefaultRowAccessTypeFactory implements RowAccessTypeFactory, Serializable {
 	private static final long serialVersionUID = 1L;
 
@@ -9,9 +10,9 @@ public class DefaultRowAccessTypeFactory implements RowAccessTypeFactory, Serial
 	{}
 	
 	@Override
-	public RowAccessType createRowAccessType(long primaryKey, short flags, Table table) {
-		byte[] byteArray = new byte[table.getTableWidth()];
-		return new RowAccessType(primaryKey, flags, table,
+	public RowAccessType createRowAccessType(long primaryKey, short flags, TableCore tableCore) {
+		byte[] byteArray = new byte[tableCore.getTableWidth()];
+		return new RowAccessType(primaryKey, flags, tableCore,
 			byteArray, this);
 	}
 

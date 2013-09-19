@@ -15,11 +15,12 @@ import java.util.List;
 
 import femtodbexceptions.FemtoDBIOException;
 
+/** Implements the databases core functionality, It is responsible for holding the list of tableCore objects as well as providing open, backup and flush the cache functionality. */
 public class FemtoDB implements Serializable{
 	private static final long serialVersionUID = 1L;
 	private String				name;
 	private transient String 	path;
-	private List<Table> 		tables;
+	private List<TableCore> 		tableCores;
 	private long 				nextUnusedTableNumber;
 	
 	/** Constructs a database requiring a name as an argument. The setPath method must be also called before the database can be used */
@@ -27,16 +28,16 @@ public class FemtoDB implements Serializable{
 	{
 		this.name				= name;
 		path					= null;
-		tables 					= new ArrayList<Table>();
+		tableCores 					= new ArrayList<TableCore>();
 		nextUnusedTableNumber 	= 0L;
 	}
 	
-	/** Creates a new table in the database, requiring a name for the table and (optionally) a name for the primary key column */
-	public Table createTable(String name, String primaryKeyName)
+	/** Creates a new tableCore in the database, requiring a name for the tableCore and (optionally) a name for the primary key column */
+	public TableCore createTable(String name, String primaryKeyName)
 	{
 		long tableNumber 	= nextUnusedTableNumber++;
-		Table newTable 		= new Table(this, name, tableNumber, primaryKeyName);
-		tables.add(newTable);
+		TableCore newTable 		= new TableCore(this, name, tableNumber, primaryKeyName);
+		tableCores.add(newTable);
 		return newTable;
 	}
 	
@@ -129,10 +130,10 @@ public class FemtoDB implements Serializable{
 		// add a start file
 		generateStartFile(destString);
 		
-		// flush the caches of the tables
+		// flush the caches of the tableCores
 		flushTheCache();
 		
-		for(Table t: tables)
+		for(TableCore t: tableCores)
 		{
 			backupCompletelyTable(t, path, destString);
 		}	
@@ -141,13 +142,13 @@ public class FemtoDB implements Serializable{
 	}
 	
 
-	 /** Completely backs up of a given table in the database to a destination. It requires the paths for the source and destination databases to be given as arguments
-	 * @param t	The table object in the database that needs to be backed up.
+	 /** Completely backs up of a given tableCore in the database to a destination. It requires the paths for the source and destination databases to be given as arguments
+	 * @param t	The tableCore object in the database that needs to be backed up.
 	 * @param sourceDatabasePath The source database path.
 	 * @param destDatabasePath The destination database path.
 	 * @throws FemtoDBIOException
 	 */
-	private void backupCompletelyTable(Table t, String sourceDatabasePath, String destDatabasePath) throws FemtoDBIOException
+	private void backupCompletelyTable(TableCore t, String sourceDatabasePath, String destDatabasePath) throws FemtoDBIOException
 	{
 		generateTableFile(t,destDatabasePath);
 		String tableDirectoryString = destDatabasePath + File.separator + Long.toString(t.tableNumber);
@@ -158,7 +159,7 @@ public class FemtoDB implements Serializable{
 		try{
 			t.backupCompletely(tableDirectoryString);
 		}
-		catch(IOException e){ throw new FemtoDBIOException("Database " + name + " IO Exception whilst backing up table " + t.tableNumber, e);}	
+		catch(IOException e){ throw new FemtoDBIOException("Database " + name + " IO Exception whilst backing up tableCore " + t.tableNumber, e);}	
 	}
 	
 	private void backupIncrementalTo(String destString) throws FileNotFoundException, FemtoDBIOException
@@ -207,11 +208,11 @@ public class FemtoDB implements Serializable{
 		}
 	}
 	
-	/** Serialises a given table object into to the directory given by the destString argument. It does not serialise the associated tables data files. */
-	private void generateTableFile(Table t, String destString) throws FemtoDBIOException
+	/** Serialises a given tableCore object into to the directory given by the destString argument. It does not serialise the associated tableCores data files. */
+	private void generateTableFile(TableCore t, String destString) throws FemtoDBIOException
 	{
 		// add a start file
-		String tableFileString = destString + File.separator + "table" + t.tableNumber;
+		String tableFileString = destString + File.separator + "tableCore" + t.tableNumber;
 		File tableFile = new File(tableFileString);
 		OutputStream 		table_os = null;
 		ObjectOutputStream 	table_oos = null; 
@@ -220,9 +221,9 @@ public class FemtoDB implements Serializable{
 			table_oos = new ObjectOutputStream(table_os);
 			table_oos.writeObject(t);		
 		} catch (FileNotFoundException e) {
-			throw new FemtoDBIOException("Database " + name + " unable to create the directory to write the table file while backing up: " + tableFileString, e);
+			throw new FemtoDBIOException("Database " + name + " unable to create the directory to write the tableCore file while backing up: " + tableFileString, e);
 		} catch (IOException e) {
-			throw new FemtoDBIOException("Database " + name + " was unable to create the following table file while backing up: " + tableFileString, e);
+			throw new FemtoDBIOException("Database " + name + " was unable to create the following tableCore file while backing up: " + tableFileString, e);
 		} finally
 		{
 			if(table_oos != null)
@@ -230,7 +231,7 @@ public class FemtoDB implements Serializable{
 				try {
 					table_oos.close();
 				} catch (IOException e) {
-					throw new FemtoDBIOException("Database " + name + " was unable to close the following table file while backing up: " + tableFileString, e);
+					throw new FemtoDBIOException("Database " + name + " was unable to close the following tableCore file while backing up: " + tableFileString, e);
 				}
 			}
 			if(table_os != null)
@@ -238,7 +239,7 @@ public class FemtoDB implements Serializable{
 				try {
 					table_os.close();
 				} catch (IOException e) {
-					throw new FemtoDBIOException("Database " + name + " was unable to close the following table file while backing up: " + tableFileString,e);
+					throw new FemtoDBIOException("Database " + name + " was unable to close the following tableCore file while backing up: " + tableFileString,e);
 				}
 			}		
 		}
@@ -284,10 +285,10 @@ public class FemtoDB implements Serializable{
 		}
 	}
 	
-	/** Checks the cache's of all the tables and ensures any unsaved modifications are flushed to disk. To maintain performance it does not free any of the cache by marking the cache page as empty.*/
+	/** Checks the cache's of all the tableCores and ensures any unsaved modifications are flushed to disk. To maintain performance it does not free any of the cache by marking the cache page as empty.*/
 	private void flushTheCache() throws FemtoDBIOException
 	{
-		for(Table t: tables)
+		for(TableCore t: tableCores)
 		{
 			t.flushCache();
 		}
@@ -413,10 +414,10 @@ public class FemtoDB implements Serializable{
 		throw new FemtoDBIOException("Failed to open the database. The database and both its backups appear to be corrupted, everythings gone totally foobar. Its time to go get a coffee");
 	}
 	
-	/** Aligns all the paths held in tables to the databases current path */ 
+	/** Aligns all the paths held in tableCores to the databases current path */ 
 	private void loadTables()
 	{
-		for(Table t: tables)
+		for(TableCore t: tableCores)
 		{
 			t.finishLoading(this);
 		}
@@ -460,23 +461,23 @@ public class FemtoDB implements Serializable{
 			is3 = new FileInputStream(databaseFile);
 			ois3 = new ObjectInputStream(is3);
 			backedUpDatabase = (FemtoDB)ois3.readObject();
-			long temp = 0; // used to force table de-serialisation
+			long temp = 0; // used to force tableCore de-serialisation
 			if(backedUpDatabase != null)
 			{
-					List<Table> backedUpTables = backedUpDatabase.tables;
+					List<TableCore> backedUpTables = backedUpDatabase.tableCores;
 					
-					// check it is possible to read all the table files
-					for(Table t: backedUpTables)
+					// check it is possible to read all the tableCore files
+					for(TableCore t: backedUpTables)
 					{
-						String tableFileString = path + File.separator + "table" + Long.toString(t.tableNumber);
+						String tableFileString = path + File.separator + "tableCore" + Long.toString(t.tableNumber);
 						InputStream isForTable = null;
 						ObjectInputStream oisForTable = null;
-						Table readTable = null;
+						TableCore readTable = null;
 						try
 						{
 							isForTable = new FileInputStream(tableFileString);
 							oisForTable = new ObjectInputStream(isForTable);
-							readTable = (Table) oisForTable.readObject();
+							readTable = (TableCore) oisForTable.readObject();
 							temp += readTable.tableNumber;
 							if(validateFully)
 							{
@@ -531,7 +532,7 @@ public class FemtoDB implements Serializable{
 		return name;
 	}
 
-	/** Sets the path of the database and generates a new start file in that location. It does not set the paths in the databases tables */
+	/** Sets the path of the database and generates a new start file in that location. It does not set the paths in the databases tableCores */
 	public final void setPath(String path) throws FemtoDBIOException {
 		this.path = path;
 		File pathFile = new File(path);

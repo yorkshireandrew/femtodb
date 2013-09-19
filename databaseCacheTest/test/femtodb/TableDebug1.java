@@ -22,8 +22,8 @@ public class TableDebug1 {
 		if(f.exists())f.delete();
 		f.mkdir();
 		
-		// create the table
-		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		// create the tableCore
+		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
 		tut.setRowsPerFile(5);
 		tut.setRemoveOccupancyRatio(0.4);
 		tut.setCombineOccupancyRatio(0.8);
@@ -44,7 +44,7 @@ public class TableDebug1 {
 			tut.insertOrIgnoreByteArrayByPrimaryKey(1L, toInsert);
 			System.out.println("Finished First insert");
 
-			// display table
+			// display tableCore
 			System.out.println(tut);
 			System.out.println(tut.cacheToString());
 			
@@ -57,14 +57,14 @@ public class TableDebug1 {
 				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert);
 			}
 			
-			// display table
+			// display tableCore
 			System.out.println(tut);
 			System.out.println(tut.cacheToString());
 
 			System.out.println("Delete 8");
 			tut.deleteByPrimaryKey(8L);
 			
-			// display table
+			// display tableCore
 			System.out.println(tut);
 			System.out.println(tut.cacheToString());	
 			
@@ -94,8 +94,8 @@ public class TableDebug1 {
 		if(f.exists())f.delete();
 		f.mkdir();
 		
-		// create the table
-		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		// create the tableCore
+		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
 		tut.setRowsPerFile(5);
 		tut.setRemoveOccupancyRatio(0.4);
 		tut.setCombineOccupancyRatio(0.8);
@@ -116,7 +116,7 @@ public class TableDebug1 {
 				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert);
 			}
 			
-			// display table
+			// display tableCore
 			System.out.println(tut);
 			System.out.println(tut.cacheToString());	
 			
@@ -137,7 +137,7 @@ public class TableDebug1 {
 			
 			System.out.println("finished delete");
 			
-			// display table
+			// display tableCore
 			System.out.println(tut);
 			System.out.println(tut.cacheToString());
 			
@@ -163,7 +163,7 @@ public class TableDebug1 {
 				tut.deleteByPrimaryKey(x);
 			}			
 			
-			// display table
+			// display tableCore
 			System.out.println(tut);
 			System.out.println(tut.cacheToString());
 			

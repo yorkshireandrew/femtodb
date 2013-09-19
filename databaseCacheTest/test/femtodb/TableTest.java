@@ -47,8 +47,8 @@ public class TableTest {
 		if(f.exists())f.delete();
 		f.mkdir();
 		
-		// create the table
-		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		// create the tableCore
+		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
 		tut.setRowsPerFile(5);
 		tut.setRemoveOccupancyRatio(0.4);
 		tut.setCombineOccupancyRatio(0.8);
@@ -96,8 +96,8 @@ public class TableTest {
 		if(f.exists())f.delete();
 		f.mkdir();
 		
-		// create the table
-		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		// create the tableCore
+		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
 		tut.setRowsPerFile(5);
 		tut.setRemoveOccupancyRatio(0.4);
 		tut.setCombineOccupancyRatio(0.8);
@@ -197,8 +197,8 @@ public class TableTest {
 		if(f.exists())f.delete();
 		f.mkdir();
 		
-		// create the table
-		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		// create the tableCore
+		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
 		tut.setRowsPerFile(5);
 		tut.setRemoveOccupancyRatio(0.4);
 		tut.setCombineOccupancyRatio(0.8);
@@ -218,7 +218,7 @@ public class TableTest {
 				BuffWrite.writeShort(toInsert, 8, (10 * x));
 				BuffWrite.writeInt(toInsert, 10, (2 * x));
 				
-				RowAccessType rat = tut.getRowAccessTypeFactory().createRowAccessType(x, Table.FLAG_CACHE_NOT_SET, tut);
+				RowAccessType rat = tut.getRowAccessTypeFactory().createRowAccessType(x, TableCore.FLAG_CACHE_NOT_SET, tut);
 				System.arraycopy(toInsert, 0, rat.byteArray, 0, tut.getTableWidth());		
 				tut.insertOrIgnore((long)x, rat);
 			}
@@ -294,8 +294,8 @@ public class TableTest {
 		if(f.exists())f.delete();
 		f.mkdir();
 		
-		// create the table
-		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		// create the tableCore
+		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
 		tut.setRowsPerFile(5);
 		tut.setRemoveOccupancyRatio(0.4);
 		tut.setCombineOccupancyRatio(0.8);
@@ -320,12 +320,12 @@ public class TableTest {
 			
 			FemtoDBIterator fastIterator = tut.fastIterator();
 			
-			// check fastIterator reads back the table correctly
+			// check fastIterator reads back the tableCore correctly
 			for(int x = 1; x < 15; x++)
 			{
 				assertTrue(fastIterator.hasNext());
 				rat = fastIterator.next();
-				assertEquals(tut, rat.table);
+				assertEquals(tut, rat.tableCore);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
 				assertNotNull(readBack);
@@ -338,12 +338,12 @@ public class TableTest {
 			// check fastIterator resets correctly 
 			fastIterator.reset();
 			
-			// check fastIterator reads back the table correctly again
+			// check fastIterator reads back the tableCore correctly again
 			for(int x = 1; x < 15; x++)
 			{
 				assertTrue(fastIterator.hasNext());
 				rat = fastIterator.next();
-				assertEquals(tut, rat.table);
+				assertEquals(tut, rat.tableCore);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
 				assertNotNull(readBack);
@@ -379,8 +379,8 @@ public class TableTest {
 		if(f.exists())f.delete();
 		f.mkdir();
 		
-		// create the table
-		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		// create the tableCore
+		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
 		tut.setRowsPerFile(5);
 		tut.setRemoveOccupancyRatio(0.4);
 		tut.setCombineOccupancyRatio(0.8);
@@ -405,12 +405,12 @@ public class TableTest {
 			
 			FemtoDBIterator safeIterator = tut.safeIterator();
 			
-			// check fastIterator reads back the table correctly
+			// check fastIterator reads back the tableCore correctly
 			for(int x = 1; x < 15; x++)
 			{
 				assertTrue(safeIterator.hasNext());
 				rat = safeIterator.next();
-				assertEquals(tut, rat.table);
+				assertEquals(tut, rat.tableCore);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
 				assertNotNull(readBack);
@@ -423,12 +423,12 @@ public class TableTest {
 			// check fastIterator resets correctly 
 			safeIterator.reset();
 			
-			// check fastIterator reads back the table correctly again
+			// check fastIterator reads back the tableCore correctly again
 			for(int x = 1; x < 15; x++)
 			{
 				assertTrue(safeIterator.hasNext());
 				rat = safeIterator.next();
-				assertEquals(tut, rat.table);
+				assertEquals(tut, rat.tableCore);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
 				assertNotNull(readBack);
@@ -468,8 +468,8 @@ public class TableTest {
 		if(f.exists())f.delete();
 		f.mkdir();
 		
-		// create the table
-		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		// create the tableCore
+		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
 		tut.setRowsPerFile(5);
 		tut.setRemoveOccupancyRatio(0.4);
 		tut.setCombineOccupancyRatio(0.8);
@@ -494,12 +494,12 @@ public class TableTest {
 			
 			FemtoDBIterator safeIterator = tut.safeIterator();
 			
-			// check safeIterator reads back the table correctly
+			// check safeIterator reads back the tableCore correctly
 			for(int x = 1; x < 10; x++)
 			{
 				assertTrue(safeIterator.hasNext());
 				rat = safeIterator.next();
-				assertEquals(tut, rat.table);
+				assertEquals(tut, rat.tableCore);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
 				assertNotNull(readBack);
@@ -528,7 +528,7 @@ public class TableTest {
 				System.out.println("x = " + x);
 				assertTrue(safeIterator.hasNext());
 				rat = safeIterator.next();
-				assertEquals(tut, rat.table);
+				assertEquals(tut, rat.tableCore);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
 				assertNotNull(readBack);
@@ -541,12 +541,12 @@ public class TableTest {
 			// check safeIterator resets correctly 
 			safeIterator.reset();
 			
-			// check fastIterator reads back the table correctly again
+			// check fastIterator reads back the tableCore correctly again
 			for(int x = 8; x < 15; x++)
 			{
 				assertTrue(safeIterator.hasNext());
 				rat = safeIterator.next();
-				assertEquals(tut, rat.table);
+				assertEquals(tut, rat.tableCore);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
 				assertNotNull(readBack);
@@ -577,8 +577,8 @@ public class TableTest {
 		if(f.exists())f.delete();
 		f.mkdir();
 		
-		// create the table
-		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		// create the tableCore
+		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
 		tut.setRowsPerFile(5);
 		tut.setRemoveOccupancyRatio(0.4);
 		tut.setCombineOccupancyRatio(0.8);
@@ -603,12 +603,12 @@ public class TableTest {
 			
 			FemtoDBIterator safeIterator = tut.safeIterator();
 			
-			// check fastIterator reads back the table correctly
+			// check fastIterator reads back the tableCore correctly
 			for(int x = 1; x < 10; x++)
 			{
 				assertTrue(safeIterator.hasNext());
 				rat = safeIterator.next();
-				assertEquals(tut, rat.table);
+				assertEquals(tut, rat.tableCore);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
 				assertNotNull(readBack);
@@ -626,7 +626,7 @@ public class TableTest {
 			x = 10;
 				assertTrue(safeIterator.hasNext());
 				rat = safeIterator.next();
-				assertEquals(tut, rat.table);
+				assertEquals(tut, rat.tableCore);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
 				assertNotNull(readBack);
@@ -635,7 +635,7 @@ public class TableTest {
 			x = 11;
 				assertTrue(safeIterator.hasNext());
 				rat = safeIterator.next();
-				assertEquals(tut, rat.table);
+				assertEquals(tut, rat.tableCore);
 				assertEquals((long)(x + 7),rat.primaryKey);
 				readBack = rat.byteArray;
 				assertNotNull(readBack);
@@ -647,12 +647,12 @@ public class TableTest {
 			// check fastIterator resets correctly 
 			safeIterator.reset();
 			
-			// check fastIterator reads back the table correctly again
+			// check fastIterator reads back the tableCore correctly again
 			for(int xx = 1; xx < 12; xx++)
 			{
 				assertTrue(safeIterator.hasNext());
 				rat = safeIterator.next();
-				assertEquals(tut, rat.table);
+				assertEquals(tut, rat.tableCore);
 				assertEquals((long)(xx + 7),rat.primaryKey);
 				readBack = rat.byteArray;
 				assertNotNull(readBack);
@@ -681,8 +681,8 @@ public class TableTest {
 		if(f.exists())f.delete();
 		f.mkdir();
 		
-		// create the table
-		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		// create the tableCore
+		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
 		tut.setRowsPerFile(5);
 		tut.setRemoveOccupancyRatio(0.4);
 		tut.setCombineOccupancyRatio(0.8);
@@ -705,12 +705,12 @@ public class TableTest {
 			
 				FemtoDBIterator safeIterator = tut.safeIterator();
 			
-			// check fastIterator reads back the table correctly
+			// check fastIterator reads back the tableCore correctly
 
 				try {
 					assertTrue(safeIterator.hasNext());
 					rat = safeIterator.next();
-					assertEquals(tut, rat.table);
+					assertEquals(tut, rat.tableCore);
 					assertEquals((long)(x + 7),rat.primaryKey);
 					readBack = rat.byteArray;
 					assertNotNull(readBack);
@@ -761,8 +761,8 @@ public class TableTest {
 		if(f.exists())f.delete();
 		f.mkdir();
 		
-		// create the table
-		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		// create the tableCore
+		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
 		tut.setRowsPerFile(5);
 		tut.setRemoveOccupancyRatio(0.4);
 		tut.setCombineOccupancyRatio(0.8);
@@ -801,7 +801,7 @@ public class TableTest {
 				try {
 					assertTrue(safeIterator.hasNext());
 					rat = safeIterator.next();
-					assertEquals(tut, rat.table);
+					assertEquals(tut, rat.tableCore);
 					assertEquals((long)(x + 7),rat.primaryKey);
 					readBack = rat.byteArray;
 					assertNotNull(readBack);
@@ -814,7 +814,7 @@ public class TableTest {
 				try {
 					assertTrue(safeIterator.hasNext());
 					rat = safeIterator.next();
-					assertEquals(tut, rat.table);
+					assertEquals(tut, rat.tableCore);
 					assertEquals((long)(x + 7),rat.primaryKey);
 					readBack = rat.byteArray;
 					assertNotNull(readBack);
@@ -838,7 +838,7 @@ public class TableTest {
 					assertTrue(safeIterator.hasNext());
 					rat = safeIterator.next();
 					if(rat == null)System.out.println("rat was null!");
-					assertEquals(tut, rat.table);
+					assertEquals(tut, rat.tableCore);
 					assertEquals((long)(x + 7),rat.primaryKey);
 					readBack = rat.byteArray;
 					assertNotNull(readBack);
@@ -866,8 +866,8 @@ public class TableTest {
 		if(f.exists())f.delete();
 		f.mkdir();
 		
-		// create the table
-		Table tut = new Table(fdb, "debugtable1", 0, "pk");
+		// create the tableCore
+		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
 		tut.setRowsPerFile(5);
 		tut.setRemoveOccupancyRatio(0.4);
 		tut.setCombineOccupancyRatio(0.8);
@@ -893,7 +893,7 @@ public class TableTest {
 			fail();
 		}
 		
-		// save the table
+		// save the tableCore
 		try {
 			tut.flushCache();
 			
@@ -928,12 +928,12 @@ public class TableTest {
 		fdb2.setPath("debug2");
 		
 		
-		// create a new table
-		Table tut2 = null;
+		// create a new tableCore
+		TableCore tut2 = null;
 		try {
 			FileInputStream is = new FileInputStream("test_table");
 			ObjectInputStream ois = new ObjectInputStream(is);
-			tut2 = (Table)ois.readObject();
+			tut2 = (TableCore)ois.readObject();
 			ois.close();	
 		} catch (FileNotFoundException e) {
 			fail();

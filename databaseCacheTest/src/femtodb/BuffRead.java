@@ -2,67 +2,68 @@ package femtodb;
 
 import java.io.UTFDataFormatException;
 
+/** Reads primitive types or a byte array from a data byte array starting at a given offset */
 public class BuffRead {
 
 	static byte[] readBuffer2 = new byte[8];
 	/** read a single byte */
-    static final int read(final byte[] buff, final int index)
+    static final int read(final byte[] data, final int offset)
     {
-    	return buff[index] & 0xFF;
+    	return data[offset] & 0xFF;
     }
     
-    static final void readFully(final byte[] buff, final int index, final byte[] dest, final int destPos, final int len)
+    static final void readFully(final byte[] data, final int offset, final byte[] dest, final int destPos, final int len)
     {
     	
-    	System.arraycopy(buff, index, dest, destPos, len);
+    	System.arraycopy(data, offset, dest, destPos, len);
     }
     
-    static final byte[] readByteArray(final byte[] buff, int index)
+    static final byte[] readByteArray(final byte[] data, int offset)
     {
-    	int len = readInt(buff,index);
-    	index += 4;
+    	int len = readInt(data,offset);
+    	offset += 4;
     	byte[] retval = new byte[len];
     	for(int x = 0; x < len ; x++)
     	{
-    		retval[x] = (byte)read(buff,index++);
+    		retval[x] = (byte)read(data,offset++);
     	}
     	return retval;
     }
 
-    static final boolean readBoolean(final byte[] buff, final int index)
+    static final boolean readBoolean(final byte[] data, final int offset)
     {
-    	byte ch = buff[index];
+    	byte ch = data[offset];
     	return (ch != 0);
     }
     
-    static final short readShort(final byte[] buff, int index)
+    static final short readShort(final byte[] data, int offset)
     {
-        int ch1 = buff[index++] & 0xFF;
-        int ch2 = buff[index] & 0xFF;
+        int ch1 = data[offset++] & 0xFF;
+        int ch2 = data[offset] & 0xFF;
         return (short)((ch1 << 8) + (ch2 << 0));
     }
 
-    static final char readChar(final byte[] buff, int index)
+    static final char readChar(final byte[] data, int offset)
     {
-        int ch1 = buff[index++] & 0xFF;
-        int ch2 = buff[index] & 0xFF;
+        int ch1 = data[offset++] & 0xFF;
+        int ch2 = data[offset] & 0xFF;
         return (char)((ch1 << 8) + (ch2 << 0));
     }
 
-    static final int readInt(final byte[] buff, int index)
+    static final int readInt(final byte[] data, int offset)
     {
-        int ch1 = buff[index++] & 0xFF;
-        int ch2 = buff[index++] & 0xFF;
-        int ch3 = buff[index++] & 0xFF;
-        int ch4 = buff[index] & 0xFF;
+        int ch1 = data[offset++] & 0xFF;
+        int ch2 = data[offset++] & 0xFF;
+        int ch3 = data[offset++] & 0xFF;
+        int ch4 = data[offset] & 0xFF;
         return ((ch1 << 24) | (ch2 << 16) | (ch3 << 8) | (ch4 << 0));
     }
    
     synchronized
-    static final long readLong(final byte[] buff, int index)
+    static final long readLong(final byte[] data, int offset)
     {
     	byte[] readBuffer2L = readBuffer2;
-        readFully(buff, index, readBuffer2L, 0, 8);
+        readFully(data, offset, readBuffer2L, 0, 8);
         return (
         		((long)(readBuffer2L[0] & 255) << 56) |
                 ((long)(readBuffer2L[1] & 255) << 48) |
@@ -74,31 +75,31 @@ public class BuffRead {
                 ((readBuffer2L[7] & 255) <<  0));
     }
 
-    static final float readFloat(final byte[] buff, final int index){
-    	return Float.intBitsToFloat(readInt(buff, index));
+    static final float readFloat(final byte[] data, final int offset){
+    	return Float.intBitsToFloat(readInt(data, offset));
     }
 
 
-    static final double readDouble(final byte[] buff, final int index){
-    	return Double.longBitsToDouble(readLong(buff, index));
+    static final double readDouble(final byte[] data, final int offset){
+    	return Double.longBitsToDouble(readLong(data, offset));
     }
     
-    static final char[] readChars(final byte[] buff, int index)
+    static final char[] readChars(final byte[] data, int offset)
     {
-    	int len = readShort(buff,index);
-    	index += 2;
+    	int len = readShort(data,offset);
+    	offset += 2;
     	char[] retval = new char[len];
     	for(int x = 0; x < len; x++)
     	{
-    		retval[x] = readChar(buff,index);
-    		index += 2;
+    		retval[x] = readChar(data,offset);
+    		offset += 2;
     	}
     	return retval;
     }
-
-    static final String readString(final byte[] buff, int index) throws UTFDataFormatException {
-    	int utflen = readShort(buff, index);
-        index += 2;
+    /** Returns a String representing the string data that was encoded into the data byte array starting at a given offset. */
+    static final String readString(final byte[] data, int offset) throws UTFDataFormatException {
+    	int utflen = readShort(data, offset);
+        offset += 2;
         char[] chararr = new char[utflen];
 
         int c, char2, char3;
@@ -106,14 +107,14 @@ public class BuffRead {
         int chararr_count=0;
 
         while (count < utflen) {
-            c = (int) buff[index + count] & 0xff;      
+            c = (int) data[offset + count] & 0xff;      
             if (c > 127) break;
             count++;
             chararr[chararr_count++]=(char)c;
         }
 
         while (count < utflen) {
-            c = (int) buff[index + count] & 0xff;
+            c = (int) data[offset + count] & 0xff;
             switch (c >> 4) {
                 case 0: case 1: case 2: case 3: case 4: case 5: case 6: case 7:
                     /* 0xxxxxxx*/
@@ -126,7 +127,7 @@ public class BuffRead {
                     if (count > utflen)
                         throw new UTFDataFormatException(
                             "malformed input: partial character at end");
-                    char2 = (int) buff[index + count-1];
+                    char2 = (int) data[offset + count-1];
                     if ((char2 & 0xC0) != 0x80)
                         throw new UTFDataFormatException(
                             "malformed input around byte " + count); 
@@ -139,8 +140,8 @@ public class BuffRead {
                     if (count > utflen)
                         throw new UTFDataFormatException(
                             "malformed input: partial character at end");
-                    char2 = (int) buff[index + count-2];
-                    char3 = (int) buff[index + count-1];
+                    char2 = (int) data[offset + count-2];
+                    char3 = (int) data[offset + count-1];
                     if (((char2 & 0xC0) != 0x80) || ((char3 & 0xC0) != 0x80))
                         throw new UTFDataFormatException(
                             "malformed input around byte " + (count-1));
@@ -158,10 +159,10 @@ public class BuffRead {
         return new String(chararr, 0, chararr_count);
     }
     
-    /** Modifies the passed in string builder */
-    static final StringBuilder readStringBuilder(final byte[] buff, int index, StringBuilder stringBuilder) throws UTFDataFormatException {
-    	int utflen = readShort(buff, index);
-        index += 2;
+    /** Modifies and returns the passed in string builder so that it contain the string data encoded into the data byte array starting at a given offset. */
+    static final StringBuilder readStringBuilder(final byte[] data, int offset, StringBuilder stringBuilder) throws UTFDataFormatException {
+    	int utflen = readShort(data, offset);
+        offset += 2;
         char[] chararr = new char[utflen];
 
         int c, char2, char3;
@@ -169,14 +170,14 @@ public class BuffRead {
         int chararr_count=0;
 
         while (count < utflen) {
-            c = (int) buff[index + count] & 0xff;      
+            c = (int) data[offset + count] & 0xff;      
             if (c > 127) break;
             count++;
             chararr[chararr_count++]=(char)c;
         }
 
         while (count < utflen) {
-            c = (int) buff[index + count] & 0xff;
+            c = (int) data[offset + count] & 0xff;
             switch (c >> 4) {
                 case 0: case 1: case 2: case 3: case 4: case 5: case 6: case 7:
                     /* 0xxxxxxx*/
@@ -189,7 +190,7 @@ public class BuffRead {
                     if (count > utflen)
                         throw new UTFDataFormatException(
                             "malformed input: partial character at end");
-                    char2 = (int) buff[index + count-1];
+                    char2 = (int) data[offset + count-1];
                     if ((char2 & 0xC0) != 0x80)
                         throw new UTFDataFormatException(
                             "malformed input around byte " + count); 
@@ -202,8 +203,8 @@ public class BuffRead {
                     if (count > utflen)
                         throw new UTFDataFormatException(
                             "malformed input: partial character at end");
-                    char2 = (int) buff[index + count-2];
-                    char3 = (int) buff[index + count-1];
+                    char2 = (int) data[offset + count-2];
+                    char3 = (int) data[offset + count-1];
                     if (((char2 & 0xC0) != 0x80) || ((char3 & 0xC0) != 0x80))
                         throw new UTFDataFormatException(
                             "malformed input around byte " + (count-1));

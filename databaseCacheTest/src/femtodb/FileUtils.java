@@ -7,8 +7,10 @@ import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.WritableByteChannel;
 
+/** Utility providing several static methods for coping files, recursively copying files or directories, or recursively deleting files or directories.*/
 public class FileUtils {
 
+	/** Simply copies a file. The destination must not already exist and the destination directory must already have been created. */
 	public static void copyFile(File source, File dest) throws IOException
 	{
 		FileInputStream fis = null;

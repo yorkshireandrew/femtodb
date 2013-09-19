@@ -1,5 +1,6 @@
 package femtodb;
 
+/** Interface used for iterating over the rows of a tableCore */
 import femtodbexceptions.FemtoDBConcurrentModificationException;
 import femtodbexceptions.FemtoDBIOException;
 

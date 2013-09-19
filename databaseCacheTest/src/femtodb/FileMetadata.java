@@ -3,11 +3,12 @@ package femtodb;
 import java.io.File;
 import java.io.Serializable;
 
+/** Used by the TableCore class, this class holds the meta data information (such as its size and the range of contained primary keys) about one of the data files that are used to store and persist a number of rows of a database tableCore. */
 public class FileMetadata implements Serializable{
 	private static final long serialVersionUID = 1L;
 	
-	/** Table */
-	transient Table		owner;
+	/** TableCore */
+	transient TableCore		owner;
 	/** Filename. This gets constructed from file number and owner */
 	transient String	filename;
 	/** Value used to identify the file on the file system */
@@ -37,7 +38,7 @@ public class FileMetadata implements Serializable{
 	boolean				modified;
 	
 	FileMetadata(
-			Table owner,
+			TableCore owner,
 			long filenumber, 
 			long lowerBound, 
 			long upperBound,
@@ -79,7 +80,7 @@ public class FileMetadata implements Serializable{
 		return retval;	
 	}
 	
-    final void finishLoading(Table newOwner)
+    final void finishLoading(TableCore newOwner)
     {
 		owner 		= newOwner;
     	filename 	= owner.getTableDirectory() + File.separator +
