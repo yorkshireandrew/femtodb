@@ -12,24 +12,29 @@ import java.io.OutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
 
 import femtodbexceptions.FemtoDBIOException;
 
 /** Implements the databases core functionality, It is responsible for holding the list of tableCore objects as well as providing open, backup and flush the cache functionality. */
-public class FemtoDB implements Serializable{
+public class FemtoDB implements Serializable, Lock{
 	private static final long serialVersionUID = 1L;
 	private String				name;
 	private transient String 	path;
-	private List<TableCore> 		tableCores;
+	private List<TableCore> 	tableCores;
 	private long 				nextUnusedTableNumber;
+	private TableLock			databaseLock;
 	
 	/** Constructs a database requiring a name as an argument. The setPath method must be also called before the database can be used */
 	public FemtoDB(String name)
 	{
 		this.name				= name;
 		path					= null;
-		tableCores 					= new ArrayList<TableCore>();
+		tableCores 				= new ArrayList<TableCore>();
 		nextUnusedTableNumber 	= 0L;
+		databaseLock			= new TableLock();
 	}
 	
 	/** Creates a new tableCore in the database, requiring a name for the tableCore and (optionally) a name for the primary key column */
@@ -519,6 +524,79 @@ public class FemtoDB implements Serializable{
 			catch(Exception e){}
 		}
 	}
+	
+	// ****************** Locking **********************************
+	
+	@Override
+	public void lock() {databaseLock.lock();}
+	
+	private void backupLock() {databaseLock.backupLock();}
+
+	/** Blocks until the database lock has been obtained. If the calling thread gets interrupted the method throws an InterruptedException. */ 
+	@Override
+	public void lockInterruptibly() throws InterruptedException 
+	{databaseLock.lockInterruptibly();}
+
+	/** Attempts to acquire the database lock returning immediately. If there are no threads currently holding the database lock then the caller is given the lock and the method will return true. */
+	@Override
+	public boolean tryLock() {return databaseLock.tryLock();}
+
+	/** Attempts to acquire the database lock with a timeout (using units specified in java.util.concurrent.TimeUnit). The method returns true if the lock was acquired within the timeout.*/
+	@Override
+	public boolean tryLock(long time, TimeUnit unit) throws InterruptedException 
+	{
+		return databaseLock.tryLock(time, unit);
+	}
+
+	/** If the calling thread owns the database lock, its hold count is decreased by one. 
+	 * If the count reaches zero other threads acquire the lock in the order
+	 * they arrived. However if backup or shutdown are called that thread is given priority.
+	 */
+	@Override
+	public void unlock() {databaseLock.unlock();}
+
+	/** Not implemented */
+	@Override
+	public Condition newCondition() {
+		// NOT IMPLEMENTED
+		return null;
+	}
+	
+	/** Returns the number of holds on the database lock that the thread that currently holds it has. */
+	public final int getHoldCount() {
+		return databaseLock.getHoldCount();
+	}
+
+	/** Returns the number of threads waiting on the database lock (including the backup thread) */	
+	public final int getQueueLength()
+	{
+		return databaseLock.getQueueLength();
+	}
+
+	/** Returns true if the thread given as an argument is waiting for the database lock */	
+	public final boolean hasQueuedThread(Thread thread)
+	{
+		return databaseLock.hasQueuedThread(thread);
+	}
+	
+	/** Returns true if threads are waiting on the database lock */
+	public final boolean hasQueuedThreads()	
+	{
+		return databaseLock.hasQueuedThreads();
+	}
+	
+	/** Returns true if the database lock is currently held by the calling thread */
+	public boolean isHeldByCurrentThread()
+	{
+		return databaseLock.isHeldByCurrentThread();
+	}
+	
+	/** Returns true if a thread currently holds the database lock */
+	public boolean isLocked()
+	{
+		return databaseLock.isLocked();
+	}
+	
 
 	// ****************** Getters and Setters **********************
 	
@@ -541,6 +619,10 @@ public class FemtoDB implements Serializable{
 				generateStartFile(path);
 		}
 	}
+
+
+	
+	
 	
 	
 	
