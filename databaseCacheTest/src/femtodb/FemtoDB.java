@@ -11,50 +11,130 @@ import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 
 import femtodbexceptions.FemtoDBIOException;
+import femtodbexceptions.FemtoDBShuttingDownException;
 
 /** Implements the databases core functionality, It is responsible for holding the list of tableCore objects as well as providing open, backup and flush the cache functionality. */
-public class FemtoDB implements Serializable, Lock{
-	private static final long serialVersionUID = 1L;
-	private String				name;
-	private transient String 	path;
-	private List<TableCore> 	tableCores;
-	private long 				nextUnusedTableNumber;
-	private TableLock			databaseLock;
+public class FemtoDB implements Serializable, Lock {
+	private static final long 		serialVersionUID = 1L;
+	private String					name;
+	private transient String 		path;
+	private List<TableCore> 		tableCores;
+	private Map<String,TableCore>	tableCoreMap;
+	private long 					nextUnusedTableNumber;
+
 	
-	/** Constructs a database requiring a name as an argument. The setPath method must be also called before the database can be used */
+	private DatabaseLock		databaseLock;
+	private boolean 			shuttingDown;
+	private String				backupDirectory;	
+	
+	/** Constructs a database core requiring a name as an argument. The setPath method must be also called before the database can be used */
 	public FemtoDB(String name)
 	{
 		this.name				= name;
 		path					= null;
 		tableCores 				= new ArrayList<TableCore>();
+		tableCoreMap			= new HashMap<String,TableCore>();
 		nextUnusedTableNumber 	= 0L;
-		databaseLock			= new TableLock();
+		databaseLock			= new DatabaseLock();
+		shuttingDown			= false;
+		backupDirectory			= null;	
 	}
 	
-	/** Creates a new tableCore in the database, requiring a name for the tableCore and (optionally) a name for the primary key column */
-	public TableCore createTable(String name, String primaryKeyName)
+	/** Obtains the database lock then creates a new tableCore in the database, requiring a name for the tableCore and (optionally) a name for the primary key column 
+	 * @throws FemtoDBShuttingDownException */	
+	public TableCore createTable(String name, String primaryKeyName) throws FemtoDBShuttingDownException
 	{
-		long tableNumber 	= nextUnusedTableNumber++;
-		TableCore newTable 		= new TableCore(this, name, tableNumber, primaryKeyName);
+		lock(); // ensure we have the database lock
+		if(shuttingDown)
+		{
+			unlock();
+			throw new FemtoDBShuttingDownException();
+		}
+
+		long tableNumber 			= nextUnusedTableNumber++;
+		TableCore newTable 			= new TableCore(this, name, tableNumber, primaryKeyName);
 		tableCores.add(newTable);
+		tableCoreMap.put(name, newTable);
+		unlock();
 		return newTable;
 	}
 	
-	/** Creates a backup the database to the path given as an argument. The method automatically creates ping and pong subdirectories if they do not exist. If a backup exists the method will overwrite the oldest (or the most invalid) ping or pong backup. */
-	public void backup(String path) throws FileNotFoundException, FemtoDBIOException
+	/** Shuts down the database 
+	 * @throws FemtoDBIOException */
+	public void shutdown() throws FemtoDBIOException 
 	{
+		if(shuttingDown)return;
+		
+		// acquire the database lock as a high priority
+		databaseLock.shutdownLock();
+		shuttingDown = true;
+		
+		try{
+			for(TableCore t: tableCores)
+			{
+				t.shutdownTable();
+			}
+			
+			// generate a finish file that indicates the shutdown completed
+			generateFinishFile(path);
+		}
+		catch(FemtoDBIOException e)
+		{
+			throw e;
+		}
+		finally
+		{
+			databaseLock.unlock();
+		}
+	}
+	
+	/** Obtains the database lock then creates a backup of the database at its backupDirectory. The method automatically creates ping and pong subdirectories if they do not exist. If a backup exists the method will overwrite the oldest (or the most invalid) ping or pong backup. 
+	 * @throws FemtoDBShuttingDownException */
+	public void backup()  throws FemtoDBIOException, FemtoDBShuttingDownException
+	{
+		// we can only proceed once we hold the database lock
+		lock();
+		try{
+			backupInternal();
+		}
+		catch(FemtoDBIOException e)
+		{
+			throw e;
+		}
+		catch(FileNotFoundException e)
+		{
+			throw new FemtoDBIOException("Could not find file",e);
+		}
+		catch(FemtoDBShuttingDownException e)
+		{
+			throw e;
+		}
+		finally
+		{
+			unlock();
+		}
+	}
+		
+	/** Creates a backup of the database at its backupDirectory. The method automatically creates ping and pong subdirectories if they do not exist. If a backup exists the method will overwrite the oldest (or the most invalid) ping or pong backup. */
+	private void backupInternal() throws FemtoDBShuttingDownException, FemtoDBIOException, FileNotFoundException
+	{
+		// check we are not shutting down
+		if(shuttingDown)throw new FemtoDBShuttingDownException();
+		
 		// ensure the path exists
-		File backupLocation = new File(path);
-		if(!backupLocation.exists()) throw new FileNotFoundException("The following backup location does not exist: " + path);
+		File backupLocationFile = new File(backupDirectory);
+		if(!backupLocationFile.exists())backupLocationFile.mkdirs(); 
 		
 		// ensure there is a ping directory
-		String pingDirectoryString = path + File.separator + "ping";
+		String pingDirectoryString = backupDirectory + File.separator + "ping";
 		File ping = new File(pingDirectoryString);
 		if(!ping.exists())
 		{
@@ -62,7 +142,7 @@ public class FemtoDB implements Serializable, Lock{
 		}
 		
 		// ensure there is a pong directory
-		String pongDirectoryString = path + File.separator + "pong";
+		String pongDirectoryString = backupDirectory + File.separator + "pong";
 		File pong = new File(pongDirectoryString);
 		if(!pong.exists())
 		{
@@ -124,47 +204,26 @@ public class FemtoDB implements Serializable, Lock{
 		}
 	}
 	
-	private void backupCompletelyTo(String destString) throws FileNotFoundException, FemtoDBIOException
+	private void backupCompletelyTo(String destDirectory) throws FileNotFoundException, FemtoDBIOException
 	{
 		if(path == null)throw new FemtoDBIOException("Database " + name + " backup was attempted before the database path was set");
 		// remove the old directory if it exists and generate a new one
-		File directoryFile = new File(destString);
+		File directoryFile = new File(destDirectory);
 		FileUtils.recursiveDelete(directoryFile);
 		directoryFile.mkdirs();
 		
 		// add a start file
-		generateStartFile(destString);
+		generateStartFile(destDirectory);
 		
-		// flush the caches of the tableCores
-		flushTheCache();
+		// add the database file
+		generateDatabaseFile(destDirectory);
 		
 		for(TableCore t: tableCores)
 		{
-			backupCompletelyTable(t, path, destString);
+			t.backupCompletely(destDirectory);
 		}	
 		
-		generateFinishFile(destString);
-	}
-	
-
-	 /** Completely backs up of a given tableCore in the database to a destination. It requires the paths for the source and destination databases to be given as arguments
-	 * @param t	The tableCore object in the database that needs to be backed up.
-	 * @param sourceDatabasePath The source database path.
-	 * @param destDatabasePath The destination database path.
-	 * @throws FemtoDBIOException
-	 */
-	private void backupCompletelyTable(TableCore t, String sourceDatabasePath, String destDatabasePath) throws FemtoDBIOException
-	{
-		generateTableFile(t,destDatabasePath);
-		String tableDirectoryString = destDatabasePath + File.separator + Long.toString(t.tableNumber);
-		File tableDirectoryFile = new File(tableDirectoryString);
-		if(tableDirectoryFile.exists())tableDirectoryFile.delete();
-		tableDirectoryFile.mkdirs();
-		
-		try{
-			t.backupCompletely(tableDirectoryString);
-		}
-		catch(IOException e){ throw new FemtoDBIOException("Database " + name + " IO Exception whilst backing up tableCore " + t.tableNumber, e);}	
+		generateFinishFile(destDirectory);
 	}
 	
 	private void backupIncrementalTo(String destString) throws FileNotFoundException, FemtoDBIOException
@@ -213,40 +272,42 @@ public class FemtoDB implements Serializable, Lock{
 		}
 	}
 	
-	/** Serialises a given tableCore object into to the directory given by the destString argument. It does not serialise the associated tableCores data files. */
-	private void generateTableFile(TableCore t, String destString) throws FemtoDBIOException
+	/** Generates a database file in the directory given by the destString argument, removing the older one if it exists. */
+	private void generateDatabaseFile(String destString) throws FemtoDBIOException
 	{
-		// add a start file
-		String tableFileString = destString + File.separator + "tableCore" + t.tableNumber;
-		File tableFile = new File(tableFileString);
-		OutputStream 		table_os = null;
-		ObjectOutputStream 	table_oos = null; 
+		String databaseFileString = destString + File.separator + "database";
+		File databaseFile = new File(databaseFileString);
+		if(databaseFile.exists())databaseFile.delete();
+		
+		OutputStream 		database_os = null;
+		ObjectOutputStream 	database_oos = null; 
 		try {
-			table_os = new FileOutputStream(tableFile);
-			table_oos = new ObjectOutputStream(table_os);
-			table_oos.writeObject(t);		
+			database_os = new FileOutputStream(databaseFile);
+			database_oos = new ObjectOutputStream(database_os);
+			database_oos.writeObject(this);		
 		} catch (FileNotFoundException e) {
-			throw new FemtoDBIOException("Database " + name + " unable to create the directory to write the tableCore file while backing up: " + tableFileString, e);
+			throw new FemtoDBIOException("Database " + name + " unable to create the directory to write the database file while backing up: " + databaseFileString);
 		} catch (IOException e) {
-			throw new FemtoDBIOException("Database " + name + " was unable to create the following tableCore file while backing up: " + tableFileString, e);
+			throw new FemtoDBIOException("Database " + name + " was unable to create the following database file while backing up: " + databaseFileString,e);
 		} finally
 		{
-			if(table_oos != null)
+			if(database_oos != null)
 			{
 				try {
-					table_oos.close();
+					database_oos.close();
 				} catch (IOException e) {
-					throw new FemtoDBIOException("Database " + name + " was unable to close the following tableCore file while backing up: " + tableFileString, e);
+					throw new FemtoDBIOException("Database " + name + " was unable to close the following start file while backing up: " + databaseFileString,e);
 				}
 			}
-			if(table_os != null)
+			if(database_os != null)
 			{
 				try {
-					table_os.close();
+					database_os.close();
 				} catch (IOException e) {
-					throw new FemtoDBIOException("Database " + name + " was unable to close the following tableCore file while backing up: " + tableFileString,e);
+					throw new FemtoDBIOException("Database " + name + " was unable to close the following start file while backing up: " + databaseFileString,e);
 				}
-			}		
+			}
+			
 		}
 	}
 	
@@ -290,17 +351,6 @@ public class FemtoDB implements Serializable, Lock{
 		}
 	}
 	
-	/** Checks the cache's of all the tableCores and ensures any unsaved modifications are flushed to disk. To maintain performance it does not free any of the cache by marking the cache page as empty.*/
-	private void flushTheCache() throws FemtoDBIOException
-	{
-		for(TableCore t: tableCores)
-		{
-			t.flushCache();
-		}
-	}
-	
-	
-	
 	// **************************************************
 	// **************************************************
 	//            CODE FOR LOADING THE DATABASE
@@ -308,7 +358,7 @@ public class FemtoDB implements Serializable, Lock{
 	// **************************************************	
 	
 	/** Returns the database at the location given by the path argument if it exists */
-	public static FemtoDB open(String path) throws FileNotFoundException, FemtoDBIOException
+	private static FemtoDB openInternal(String path, String backupDirectory) throws FileNotFoundException, FemtoDBIOException
 	{
 		String databaseFileString = path + File.separator + "database";	
 		File databaseFile = new File(databaseFileString);
@@ -321,8 +371,10 @@ public class FemtoDB implements Serializable, Lock{
 			ObjectInputStream ois = new ObjectInputStream(is);
 			retval = (FemtoDB) ois.readObject();
 			ois.close();
-			retval.setPath(path);				
+			retval.setPath(path);
+			retval.setBackupDirectory(backupDirectory);
 			retval.loadTables();
+			retval.shuttingDown = false;
 			return retval;
 
 		} catch (IOException e) {
@@ -332,17 +384,22 @@ public class FemtoDB implements Serializable, Lock{
 		}	
 	}
 	
+	private void setBackupDirectory(String backupDirectory) {
+		this.backupDirectory = backupDirectory;	
+	}
+
 	/** Returns the database at the location given by the path argument. If it appears to be corrupt or was incorrectly shutdown then
 	 * the ping and pong backups present in the directory given by the backup argument are used to attempt a database recovery.  */
-	public static FemtoDB open(String path, String backup) throws FileNotFoundException, FemtoDBIOException
+	public static FemtoDB open(String path, String backupDirectory) throws FileNotFoundException, FemtoDBIOException
 	{
 		// Open the database if it is not corrupt or was incorrectly shutdown
 		long databaseStart = getDatabaseStart(path,true);
-		if(databaseStart != -1L)return open(path);
-		if(backup == null)throw new FemtoDBIOException("Failed to open the database. The database at " + path + " appears to be corrupt or missing and the backup location given was null");				
+		if(databaseStart != -1L)return openInternal(path,backupDirectory);
+		if(backupDirectory == null)throw new FemtoDBIOException("Failed to open the database. The database at " + path + " appears to be corrupt or missing and the backup location given was null");				
+	
 		// The database looks corrupt so attempt to recover using the most recent backup
-		String pingDirectoryString = backup + File.separator + "ping";
-		String pongDirectoryString = backup + File.separator + "ping";
+		String pingDirectoryString = backupDirectory + File.separator + "ping";
+		String pongDirectoryString = backupDirectory + File.separator + "ping";
 		long pingStart = getDatabaseStart(pingDirectoryString,true);
 		long pongStart = getDatabaseStart(pongDirectoryString,true);
 		boolean pingOK = (pingStart != -1);
@@ -358,14 +415,14 @@ public class FemtoDB implements Serializable, Lock{
 				// recover using ping			
 				try {
 					FileUtils.recursiveCopy(databaseFile,pingFile);
-					return open(path);				
+					return openInternal(path,backupDirectory);				
 				} 
 				catch (IOException e)
 				{
 					// ping failed try pong
 					try {
 						FileUtils.recursiveCopy(databaseFile,pongFile);
-						return open(path);
+						return openInternal(path,backupDirectory);
 					} catch (IOException e1) {
 						throw new FemtoDBIOException("Failed to open the database. The database appears to be corrupt, both the backups appear to be functional but threw IOExceptions whilst copying.", e1);
 					}					
@@ -376,14 +433,14 @@ public class FemtoDB implements Serializable, Lock{
 				// recover using pong			
 				try {
 					FileUtils.recursiveCopy(databaseFile,pongFile);
-					return open(path);				
+					return openInternal(path,backupDirectory);				
 				} 
 				catch (IOException e)
 				{
 					// pong failed try ping
 					try {
 						FileUtils.recursiveCopy(databaseFile,pingFile);
-						return open(path);
+						return openInternal(path,backupDirectory);
 					} catch (IOException e1) {
 						throw new FemtoDBIOException("Failed to open the database. The database appears to be corrupt, both the backups appear to be functional but threw IOExceptions whilst copying.", e1);
 					}					
@@ -396,7 +453,7 @@ public class FemtoDB implements Serializable, Lock{
 			// recover using ping only		
 			try {
 				FileUtils.recursiveCopy(databaseFile,pingFile);
-				return open(path);				
+				return openInternal(path,backupDirectory);				
 			} 
 			catch (IOException e)
 			{
@@ -409,7 +466,7 @@ public class FemtoDB implements Serializable, Lock{
 			// recover using pong only		
 			try {
 				FileUtils.recursiveCopy(databaseFile,pongFile);
-				return open(path);				
+				return openInternal(path,backupDirectory);				
 			} 
 			catch (IOException e)
 			{
@@ -525,12 +582,37 @@ public class FemtoDB implements Serializable, Lock{
 		}
 	}
 	
+
+	
+
+	// ****************** Getters and Setters **********************
+	
+	/** Returns the path of the database */
+	public final String getPath() {
+		return path;
+	}
+	
+	/** Returns the name of the database */
+	public final String getName() {
+		return name;
+	}
+
+	/** Sets the path of the database and generates a new start file in that location. It does not set the paths in the databases tableCores */
+	public final void setPath(String path) throws FemtoDBIOException {
+		this.path = path;
+		File pathFile = new File(path);
+		if(pathFile.exists())
+		{
+				generateStartFile(path);
+		}
+	}
+	
+	
+	
 	// ****************** Locking **********************************
 	
 	@Override
 	public void lock() {databaseLock.lock();}
-	
-	private void backupLock() {databaseLock.backupLock();}
 
 	/** Blocks until the database lock has been obtained. If the calling thread gets interrupted the method throws an InterruptedException. */ 
 	@Override
@@ -595,29 +677,6 @@ public class FemtoDB implements Serializable, Lock{
 	public boolean isLocked()
 	{
 		return databaseLock.isLocked();
-	}
-	
-
-	// ****************** Getters and Setters **********************
-	
-	/** Returns the path of the database */
-	public final String getPath() {
-		return path;
-	}
-	
-	/** Returns the name of the database */
-	public final String getName() {
-		return name;
-	}
-
-	/** Sets the path of the database and generates a new start file in that location. It does not set the paths in the databases tableCores */
-	public final void setPath(String path) throws FemtoDBIOException {
-		this.path = path;
-		File pathFile = new File(path);
-		if(pathFile.exists())
-		{
-				generateStartFile(path);
-		}
 	}
 
 

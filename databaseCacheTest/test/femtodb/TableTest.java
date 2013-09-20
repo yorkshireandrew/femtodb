@@ -13,6 +13,8 @@ import org.junit.Test;
 import femtodbexceptions.FemtoDBConcurrentModificationException;
 import femtodbexceptions.FemtoDBIOException;
 import femtodbexceptions.FemtoDBInvalidValueException;
+import femtodbexceptions.FemtoDBShuttingDownException;
+import femtodbexceptions.FemtoDBTableDeletedException;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -37,7 +39,7 @@ public class TableTest {
 	//********************** testWriteReadDelete ***********************
 
 	@Test
-	public void testWriteReadDelete() throws FemtoDBIOException
+	public void testWriteReadDelete() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -187,7 +189,7 @@ public class TableTest {
 	//********************** RAT based testSequentialWriteReadDelete ***********************
 	
 	@Test
-	public void testSequentialWriteReadDeleteByRAT() throws FemtoDBIOException
+	public void testSequentialWriteReadDeleteByRAT() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{	
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -284,7 +286,7 @@ public class TableTest {
 	}
 	
 	@Test
-	public void fastIteratorTest() throws FemtoDBIOException
+	public void fastIteratorTest() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -369,7 +371,7 @@ public class TableTest {
 	
 	
 	@Test
-	public void SafeIteratorTest() throws FemtoDBIOException
+	public void SafeIteratorTest() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -455,10 +457,12 @@ public class TableTest {
 
 	
 	/** tests deleteing stuff the interator has travelled over 
-	 * @throws FemtoDBIOException */
+	 * @throws FemtoDBIOException 
+	 * @throws FemtoDBTableDeletedException 
+	 * @throws FemtoDBShuttingDownException */
 
 	@Test
-	public void SafeIteratorTest2() throws FemtoDBIOException
+	public void SafeIteratorTest2() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -567,7 +571,7 @@ public class TableTest {
 	}
 	
 	@Test
-	public void SafeIteratorTest3() throws FemtoDBIOException
+	public void SafeIteratorTest3() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -671,7 +675,7 @@ public class TableTest {
 	}
 
 	@Test
-	public void SafeIteratorTest4() throws FemtoDBIOException
+	public void SafeIteratorTest4() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -751,7 +755,7 @@ public class TableTest {
 	}
 
 	@Test
-	public void SafeIteratorTest5() throws FemtoDBIOException
+	public void SafeIteratorTest5() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -856,7 +860,7 @@ public class TableTest {
 	}
 	
 	@Test
-	public void testSerialisation() throws FemtoDBIOException
+	public void testSerialisation() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");

@@ -6,12 +6,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 
 /** A Lock implementation with the added feature that the thread calling its backupLock method (to acquire the lock) is given priority over threads calling other methods. */
-public class TableLock implements java.util.concurrent.locks.Lock{
+public class DatabaseLock implements java.util.concurrent.locks.Lock{
 
 	private Thread 			currentLockHolder 	= null;
 	private Thread 			backupLock 			= null;
 	private List<Thread> 	waitingThreads 		= new ArrayList<Thread>();
 	private int				holdCount 			= 0;
+	private boolean			shuttingDown		= false;
 	
 	/** Blocks until the lock has been obtained. If the calling thread gets interrupted the method still continues blocking until the lock has been obtained. */ 
 	@Override
@@ -43,7 +44,33 @@ public class TableLock implements java.util.concurrent.locks.Lock{
 		}
 	}
 	
-	/** Blocks until the lock is acquired for backing up or shutting down. This has the highest priority lock request. */
+	/** Blocks until the lock is acquired for shutting down. This is the highest priority lock request. */
+	synchronized
+	public void shutdownLock() {
+		
+		if(currentLockHolder == null)
+		{
+			shuttingDown 		= true;
+			currentLockHolder 	= Thread.currentThread();
+			holdCount++;
+			return;
+		}
+		
+		Thread currentThread 	= Thread.currentThread();
+		if(currentLockHolder == currentThread)
+		{
+			holdCount++;
+			return;
+		}
+		
+		shuttingDown 			= true;
+		backupLock 				= currentThread;
+		try {
+			currentThread.wait();
+		} catch (InterruptedException e) {}	
+	}
+	
+	/** Blocks until the lock is acquired for backing up. This has a higher priority normal lock calls but blocks forever once shutdownLock is called. */
 	synchronized
 	public void backupLock() {
 		
@@ -59,7 +86,7 @@ public class TableLock implements java.util.concurrent.locks.Lock{
 			holdCount++;
 			return;
 		}
-		backupLock = currentThread;
+		if(!shuttingDown)backupLock = currentThread;
 		try {
 			currentThread.wait();
 		} catch (InterruptedException e) {}	
@@ -135,20 +162,24 @@ public class TableLock implements java.util.concurrent.locks.Lock{
 			{
 				try {
 					Thread.sleep(time2);
+					expired[0] = true;
+					currentThread.notify();					
 				} catch (InterruptedException e) {}
-				expired[0] = true;
-				currentThread.notify();
 			}
 		};
 		
 		// use wait on current thread to block until lock is acquired or
 		waitingThreads.add(currentThread);
 		timeoutThread.start();
-		currentThread.wait();		
+		currentThread.wait();
+		timeoutThread.interrupt();
+		timeoutThread.join();
+		
 		if(expired[0])
 		{
 			// If we acquired the lock as expired went true
 			// we need to return true, to ensure the caller calls unlock later.
+			waitingThreads.remove(currentThread);
 			return(currentLockHolder == currentThread);
 		}
 		else
@@ -174,20 +205,18 @@ public class TableLock implements java.util.concurrent.locks.Lock{
 		holdCount--;
 		if(holdCount > 0)return;
 		
-		
-
 		if(backupLock == null)
 		{
 			if(waitingThreads.isEmpty())
 			{
-				currentLockHolder = null;
+				if(!shuttingDown)currentLockHolder = null;
 			}
 			else
 			{
 				currentLockHolder = waitingThreads.get(0);
 				waitingThreads.remove(0);
 				holdCount++;
-				currentLockHolder.notify();		
+				if(!shuttingDown)currentLockHolder.notify();		
 			}
 		}
 		else

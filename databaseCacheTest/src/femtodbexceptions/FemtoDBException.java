@@ -13,6 +13,8 @@ public class FemtoDBException extends Exception {
 	public static final int IO_EXCEPTION						= 8;
 	public static final int PRIMARY_KEY_NOT_FOUND				= 9;
 	public static final int CONCURRENT_MODIFICATION				= 10;
+	public static final int SHUTTING_DOWN						= 11;
+	public static final int TABLE_DELETED						= 12;
 	
 	int subType = 0;
 	FemtoDBException(int subtype){super();subType = subtype;}

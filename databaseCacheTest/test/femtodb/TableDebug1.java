@@ -4,15 +4,17 @@ import java.io.File;
 
 import femtodbexceptions.FemtoDBIOException;
 import femtodbexceptions.FemtoDBInvalidValueException;
+import femtodbexceptions.FemtoDBShuttingDownException;
+import femtodbexceptions.FemtoDBTableDeletedException;
 
 public class TableDebug1 {
 
-	public static void main(String[] args) throws FemtoDBIOException {
+	public static void main(String[] args) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException {
 		TableDebug1 test = new TableDebug1();
 		test.execute2();
 	}
 	
-	void execute() throws FemtoDBIOException
+	void execute() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");
@@ -84,7 +86,7 @@ public class TableDebug1 {
 	}
 	
 	
-	void execute2() throws FemtoDBIOException
+	void execute2() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		FemtoDB fdb = new FemtoDB("debug1");
 		fdb.setPath("debug1");

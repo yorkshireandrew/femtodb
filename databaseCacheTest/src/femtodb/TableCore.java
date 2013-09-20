@@ -2,8 +2,11 @@ package femtodb;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.ObjectOutputStream;
+import java.io.OutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -13,6 +16,8 @@ import femtodbexceptions.FemtoDBIOException;
 import femtodbexceptions.FemtoDBInvalidValueException;
 import femtodbexceptions.FemtoDBPrimaryKeyNotFoundException;
 import femtodbexceptions.FemtoDBPrimaryKeyUsedException;
+import femtodbexceptions.FemtoDBShuttingDownException;
+import femtodbexceptions.FemtoDBTableDeletedException;
 
 public class TableCore implements Serializable{
 	private static final long serialVersionUID = 1L;
@@ -116,6 +121,14 @@ public class TableCore implements Serializable{
 	// ***************** RowAccessTypeFactory ***************************
 	private boolean rowAccessTypeFactorySet = false;
 	private RowAccessTypeFactory rowAccessTypeFactory;
+	
+	/** Indicates the table has been deleted */
+	private boolean							deleted;
+	
+	/** Indicates the table is shutting down */
+	private boolean							shuttingDown;
+	
+	
 		
 	//*******************************************************************
 	//*******************************************************************
@@ -138,6 +151,9 @@ public class TableCore implements Serializable{
 		cacheSizeSet 		= false;
 		rowsPerFileSet 		= false;
 		operational 		= false;
+		
+		deleted				= false;
+		shuttingDown		= false;
 		
 		removeOccupancyRatio 	= DEFAULT_REMOVE_OCCUPANCY_RATIO;
 		combineOccupancyRatio 	= DEFAULT_ALLOW_COMBINE_OCCUPANCY_RATIO;
@@ -920,20 +936,24 @@ public class TableCore implements Serializable{
 	//******************************************************
 	//******************************************************
 	
-	/** Inserts a row with a given primary key into the tableCore, throws a PrimaryKeyUsedException if the primary key already exists. */
-	final void insert(long primaryKey, RowAccessType toInsert) throws FemtoDBIOException, FemtoDBPrimaryKeyUsedException
+	/** Inserts a row with a given primary key into the tableCore, throws a PrimaryKeyUsedException if the primary key already exists. 
+	 * @throws FemtoDBTableDeletedException 
+	 * @throws FemtoDBShuttingDownException */
+	final void insert(long primaryKey, RowAccessType toInsert) throws FemtoDBIOException, FemtoDBPrimaryKeyUsedException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		boolean inserted = insertCore(primaryKey, toInsert.flags, toInsert.byteArray);
 		if(!inserted)throw new FemtoDBPrimaryKeyUsedException("Primary key " + primaryKey +" already in tableCore " + name);
 	}
 	
-	/** Inserts a row with a given primary key into the tableCore or does nothing (and also returns false) if the primary key already exists. */
-	final boolean insertOrIgnore(long primaryKey, RowAccessType toInsert) throws FemtoDBIOException
+	/** Inserts a row with a given primary key into the tableCore or does nothing (and also returns false) if the primary key already exists. 
+	 * @throws FemtoDBTableDeletedException 
+	 * @throws FemtoDBShuttingDownException */
+	final boolean insertOrIgnore(long primaryKey, RowAccessType toInsert) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		return insertCore(primaryKey, toInsert.flags, toInsert.byteArray);
 	}
 	
-	final boolean insertOrIgnoreByteArrayByPrimaryKey(long primaryKey, byte[] toInsert) throws FemtoDBIOException
+	final boolean insertOrIgnoreByteArrayByPrimaryKey(long primaryKey, byte[] toInsert) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 			return insertCore(primaryKey, FLAG_CACHE_NOT_SET, toInsert);
 	}
@@ -945,9 +965,15 @@ public class TableCore implements Serializable{
 	 * @param toInsert				The byte array representing the row.
 	 * @return						True if an insert occurred
 	 * @throws FemtoDBIOException
+	 * @throws FemtoDBShuttingDownException 
+	 * @throws FemtoDBTableDeletedException 
 	 */
-	private final boolean insertCore(long primaryKey, short flag, byte[] toInsert) throws FemtoDBIOException
+	synchronized
+	private final boolean insertCore(long primaryKey, short flag, byte[] toInsert) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
+		if(shuttingDown)throw new FemtoDBShuttingDownException();
+		if(deleted)throw new FemtoDBTableDeletedException();
+		
 		serviceNumber++;
 		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
 		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
@@ -1052,7 +1078,7 @@ public class TableCore implements Serializable{
 	//******************************************************
 	//******************************************************
 	
-	final void update(long primaryKey, short flag, byte[] toInsert) throws FemtoDBIOException, FemtoDBPrimaryKeyNotFoundException
+	final void update(long primaryKey, short flag, byte[] toInsert) throws FemtoDBIOException, FemtoDBPrimaryKeyNotFoundException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		boolean updated = updateOrIgnore(primaryKey, flag, toInsert);
 		if(!updated)throw new FemtoDBPrimaryKeyNotFoundException("The primary key " + primaryKey + " was not found when updating a row in tableCore " + name);
@@ -1065,9 +1091,14 @@ public class TableCore implements Serializable{
 	 * @param toUpdate				The byte array representing the row.
 	 * @return						True if an update occurred (the primary key exists)
 	 * @throws FemtoDBIOException
+	 * @throws FemtoDBShuttingDownException 
+	 * @throws FemtoDBTableDeletedException 
 	 */
-	final boolean updateOrIgnore(long primaryKey, short flag, byte[] toUpdate) throws FemtoDBIOException
+	synchronized
+	final boolean updateOrIgnore(long primaryKey, short flag, byte[] toUpdate) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
+		if(shuttingDown)throw new FemtoDBShuttingDownException();
+		if(deleted)throw new FemtoDBTableDeletedException();
 		serviceNumber++;
 		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
 		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
@@ -1101,9 +1132,14 @@ public class TableCore implements Serializable{
 		return true;
 	}
 	
-	/** Checks the read lock on a row in the database tableCore, returns one if locked, zero if unlocked and -1 if the primary key does not exist */
-	final int checkRowReadLock(long primaryKey) throws FemtoDBIOException
+	/** Checks the read lock on a row in the database tableCore, returns one if locked, zero if unlocked and -1 if the primary key does not exist 
+	 * @throws FemtoDBShuttingDownException 
+	 * @throws FemtoDBTableDeletedException */
+	synchronized
+	final int checkRowReadLock(long primaryKey) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
+		if(shuttingDown)throw new FemtoDBShuttingDownException();
+		if(deleted)throw new FemtoDBTableDeletedException();
 		serviceNumber++;
 		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
 		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
@@ -1121,9 +1157,14 @@ public class TableCore implements Serializable{
 		return (isRowReadLockedLowLevel(page,rowToCheck) ? 1 : 0);
 	}
 	
-	/** Checks the read lock on a row in the database tableCore, returns one if locked, zero if unlocked and -1 if the primary key does not exist */
-	final int checkRowWriteLock(long primaryKey) throws FemtoDBIOException
+	/** Checks the read lock on a row in the database tableCore, returns one if locked, zero if unlocked and -1 if the primary key does not exist 
+	 * @throws FemtoDBShuttingDownException 
+	 * @throws FemtoDBTableDeletedException */
+	synchronized
+	final int checkRowWriteLock(long primaryKey) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
+		if(shuttingDown)throw new FemtoDBShuttingDownException();
+		if(deleted)throw new FemtoDBTableDeletedException();
 		serviceNumber++;
 		int fileMetadataListIndex 	= fileMetadataBinarySearch(primaryKey);		
 		FileMetadata fmd 			= fileMetadata.get(fileMetadataListIndex);
@@ -1204,9 +1245,14 @@ public class TableCore implements Serializable{
 		return retval;
 	}
 	
-	/** Returns a RowAccessType given a primary key, or null if it does not exist. Requires a serviceNumber for LRU caching */
-	final RowAccessType seek(long primaryKey) throws FemtoDBIOException
+	/** Returns a RowAccessType given a primary key, or null if it does not exist. Requires a serviceNumber for LRU caching 
+	 * @throws FemtoDBShuttingDownException 
+	 * @throws FemtoDBTableDeletedException */
+	synchronized
+	final RowAccessType seek(long primaryKey) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
+		if(shuttingDown)throw new FemtoDBShuttingDownException();
+		if(deleted)throw new FemtoDBTableDeletedException();
 		serviceNumber++;
 		System.out.println("seeking " + primaryKey);
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
@@ -1253,9 +1299,14 @@ public class TableCore implements Serializable{
 	//******************************************************
 	//******************************************************	
 	
-	/** Deletes a row in the tableCore given its primary key and a serviceNumber for the operation. Returns true if the primary key existed. */
-	final boolean deleteByPrimaryKey(long primaryKey) throws FemtoDBIOException
+	/** Deletes a row in the tableCore given its primary key and a serviceNumber for the operation. Returns true if the primary key existed. 
+	 * @throws FemtoDBShuttingDownException 
+	 * @throws FemtoDBTableDeletedException */
+	synchronized
+	final boolean deleteByPrimaryKey(long primaryKey) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
+		if(shuttingDown)throw new FemtoDBShuttingDownException();
+		if(deleted)throw new FemtoDBTableDeletedException();
 		serviceNumber++;
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
 		
@@ -1430,6 +1481,12 @@ public class TableCore implements Serializable{
 	//        START OF ITERATORS
 	//******************************************************
 	//******************************************************
+	/** Returns a FemtoDBIterator for iterating over all the rows of the table. 
+	 * It should not be used if the remove method 
+	 * is required, or it is known that inserts or deletes may occur on the table whilst
+	 * the iterator is in use.
+	 * @return The FemtoDBIterator
+	 */
 	FemtoDBIterator fastIterator()
 	{
 		return (new FemtoDBIterator()
@@ -1442,100 +1499,107 @@ public class TableCore implements Serializable{
 					boolean 		hasNextCalledLastResult = false;
 					
 					@Override
-					public boolean hasNext() {					
-						// if next() was not called since last call, then send previous result
-						if(hasNextCalledLast)return hasNextCalledLastResult;
-						List<FileMetadata> fileMetadataL = fileMetadata;
-						
-						// set these local variables to align with last call to next(), if one occured
-						FileMetadata hasNextFMD = fmd;
-						int hasNextRows 		= fmdRows;
-						int hasNextCurrentRow 	= currentRow;
-						
-						// update fields needed to look forward from 
-						if(hasNextFMD == null)
+					public boolean hasNext() {
+						synchronized(TableCore.this)
 						{
-							hasNextFMD			= fileMetadataL.get(0);
-							hasNextRows 		= hasNextFMD.rows;
-							hasNextCurrentRow 	= -1;
-						}
-						
-						// try stepping forward
-						hasNextCurrentRow++;
-						
-						// if we have another row in hasNextFMD return true
-						if(hasNextCurrentRow < hasNextRows)
-						{
-							hasNextCalledLast 		= true;
-							hasNextCalledLastResult = true;
-							return true;							
-						}
-						
-						// Seek forward through fileMetadata list for next row
-						int hasNextFMDIndex = fileMetadataL.indexOf(hasNextFMD);
-						hasNextFMDIndex++;
-						int fmdSize 		= fileMetadataL.size();
-						while(hasNextFMDIndex < fmdSize)
-						{
-							hasNextFMD = fileMetadataL.get(hasNextFMDIndex);
-							if(hasNextFMD.rows > 0)
+							// if next() was not called since last call, then send previous result
+							if(hasNextCalledLast)return hasNextCalledLastResult;
+							List<FileMetadata> fileMetadataL = fileMetadata;
+							
+							// set these local variables to align with last call to next(), if one occured
+							FileMetadata hasNextFMD = fmd;
+							int hasNextRows 		= fmdRows;
+							int hasNextCurrentRow 	= currentRow;
+							
+							// update fields needed to look forward from 
+							if(hasNextFMD == null)
+							{
+								hasNextFMD			= fileMetadataL.get(0);
+								hasNextRows 		= hasNextFMD.rows;
+								hasNextCurrentRow 	= -1;
+							}
+							
+							// try stepping forward
+							hasNextCurrentRow++;
+							
+							// if we have another row in hasNextFMD return true
+							if(hasNextCurrentRow < hasNextRows)
 							{
 								hasNextCalledLast 		= true;
 								hasNextCalledLastResult = true;
-								return true;
+								return true;							
 							}
+							
+							// Seek forward through fileMetadata list for next row
+							int hasNextFMDIndex = fileMetadataL.indexOf(hasNextFMD);
 							hasNextFMDIndex++;
+							int fmdSize 		= fileMetadataL.size();
+							while(hasNextFMDIndex < fmdSize)
+							{
+								hasNextFMD = fileMetadataL.get(hasNextFMDIndex);
+								if(hasNextFMD.rows > 0)
+								{
+									hasNextCalledLast 		= true;
+									hasNextCalledLastResult = true;
+									return true;
+								}
+								hasNextFMDIndex++;
+							}
+							hasNextCalledLast 		= true;
+							hasNextCalledLastResult = false;
+							return false;
 						}
-						hasNextCalledLast 		= true;
-						hasNextCalledLastResult = false;
-						return false;						
 					}
 
 					@Override
 					public RowAccessType next() throws FemtoDBIOException {
-						serviceNumber++;
-						hasNextCalledLast = false;
-						
-						List<FileMetadata> fileMetadataL = fileMetadata;
-						// update fields needed to look forward from 
-						if(fmd == null)
+						synchronized(TableCore.this)
 						{
-							fmd			= fileMetadataL.get(0);
-							fmdRows 	= fmd.rows;
-							currentRow 	= -1;
-						}
-						
-						// try stepping forward
-						currentRow++;
-						
-						// if we have another row in hasNextFMD return it
-						if(currentRow < fmdRows)
-						{
-							RowAccessType retval = getRowAccessType(fmd, currentRow);
-							fmd.lastUsedServiceNumber = serviceNumber;
-							return retval;
-						}
-						
-						// Seek forward through fileMetadata list for next row
-						int nextFMDIndex = fileMetadataL.indexOf(fmd);
-						nextFMDIndex++;
-						int fmdSize = fileMetadataL.size();
-						while(nextFMDIndex < fmdSize)
-						{
-							FileMetadata nextFMD = fileMetadataL.get(nextFMDIndex);
-							if(nextFMD.rows > 0)
+							serviceNumber++;
+							
+							hasNextCalledLast = false;
+							
+							List<FileMetadata> fileMetadataL = fileMetadata;
+							// update fields needed to look forward from 
+							if(fmd == null)
 							{
-								fmd = nextFMD;
-								currentRow = 0;
-								fmdRows = nextFMD.rows;
-								
-								RowAccessType retval = getRowAccessType(nextFMD, 0);
+								fmd			= fileMetadataL.get(0);
+								fmdRows 	= fmd.rows;
+								currentRow 	= -1;
+							}
+							
+							// try stepping forward
+							currentRow++;
+							
+							// if we have another row in hasNextFMD return it
+							if(currentRow < fmdRows)
+							{
+								RowAccessType retval = getRowAccessType(fmd, currentRow);
 								fmd.lastUsedServiceNumber = serviceNumber;
 								return retval;
 							}
+							
+							// Seek forward through fileMetadata list for next row
+							int nextFMDIndex = fileMetadataL.indexOf(fmd);
 							nextFMDIndex++;
+							int fmdSize = fileMetadataL.size();
+							while(nextFMDIndex < fmdSize)
+							{
+								FileMetadata nextFMD = fileMetadataL.get(nextFMDIndex);
+								if(nextFMD.rows > 0)
+								{
+									fmd = nextFMD;
+									currentRow = 0;
+									fmdRows = nextFMD.rows;
+									
+									RowAccessType retval = getRowAccessType(nextFMD, 0);
+									fmd.lastUsedServiceNumber = serviceNumber;
+									return retval;
+								}
+								nextFMDIndex++;
+							}
+							return null;
 						}
-						return null;
 					}
 
 					@Override
@@ -1567,6 +1631,13 @@ public class TableCore implements Serializable{
 		
 	}
 	
+	/** Iterates over all the table rows. 
+	 * It implements the remove method and allows insertions and deletions 
+	 * either side of the iterators current position.
+	 * Deleting the Iterators current position will result in a
+	 * FemtoDBConcurrentModificationException being thrown the next time the iterator is used.
+	 * @return A FemtoDBIterator to that iterates over all the rows of the table
+	 */
 	FemtoDBIterator safeIterator()
 	{
 		return (new FemtoDBIterator()
@@ -1576,174 +1647,182 @@ public class TableCore implements Serializable{
 					
 					@Override
 					public boolean hasNext() throws FemtoDBConcurrentModificationException, FemtoDBIOException{	
-						List<FileMetadata> fileMetadataL = fileMetadata;
-						if(hasPrimaryKey)
+						synchronized(TableCore.this)
 						{
-							System.out.println("iterator has primary key " + primaryKey);
-							int hasNextFMDIndex = fileMetadataBinarySearch(primaryKey);
-							if(hasNextFMDIndex == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");							
-							FileMetadata hasNextfmd = fileMetadataL.get(hasNextFMDIndex);
-							System.out.println("search gave \n" + hasNextfmd);
-							
-							// catch case of an empty tableCore (as primaryKeyBinarySearch would return its first row)
-							if(hasNextfmd.rows <= 0)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");
-	
-							int page = cachePageOf(hasNextfmd);						
-							int row = primaryKeyBinarySearch(page, primaryKey, false, false);
-							if(row == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");
-							row++; // move forward by one
-							if(row < hasNextfmd.rows)
+							List<FileMetadata> fileMetadataL = fileMetadata;
+							if(hasPrimaryKey)
 							{
-								return true;
+								System.out.println("iterator has primary key " + primaryKey);
+								int hasNextFMDIndex = fileMetadataBinarySearch(primaryKey);
+								if(hasNextFMDIndex == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");							
+								FileMetadata hasNextfmd = fileMetadataL.get(hasNextFMDIndex);
+								System.out.println("search gave \n" + hasNextfmd);
+								
+								// catch case of an empty tableCore (as primaryKeyBinarySearch would return its first row)
+								if(hasNextfmd.rows <= 0)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");
+		
+								int page = cachePageOf(hasNextfmd);						
+								int row = primaryKeyBinarySearch(page, primaryKey, false, false);
+								if(row == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");
+								row++; // move forward by one
+								if(row < hasNextfmd.rows)
+								{
+									return true;
+								}
+								else
+								{
+									// seek forward through files for next row
+									int fmdSize = fileMetadataL.size();
+									hasNextFMDIndex++;
+									
+									while(hasNextFMDIndex < fmdSize)
+									{
+										FileMetadata fmd = fileMetadataL.get(hasNextFMDIndex);
+										if(fmd.rows > 0)return true;
+										hasNextFMDIndex++;
+									}
+									return false; // must be an empty tableCore	
+								}			
 							}
 							else
 							{
-								// seek forward through files for next row
-								int fmdSize = fileMetadataL.size();
-								hasNextFMDIndex++;
-								
-								while(hasNextFMDIndex < fmdSize)
+								// OK we need to find the first primary key
+								int fmdIndex 		= 0;
+								int fmdSize 		= fileMetadataL.size();
+								while(fmdIndex < fmdSize)
 								{
-									FileMetadata fmd = fileMetadataL.get(hasNextFMDIndex);
+									FileMetadata fmd = fileMetadataL.get(fmdIndex);
 									if(fmd.rows > 0)return true;
-									hasNextFMDIndex++;
+									fmdIndex++;
 								}
 								return false; // must be an empty tableCore	
-							}			
-						}
-						else
-						{
-							// OK we need to find the first primary key
-							int fmdIndex 		= 0;
-							int fmdSize 		= fileMetadataL.size();
-							while(fmdIndex < fmdSize)
-							{
-								FileMetadata fmd = fileMetadataL.get(fmdIndex);
-								if(fmd.rows > 0)return true;
-								fmdIndex++;
 							}
-							return false; // must be an empty tableCore	
 						}
 					}
 
 					@Override
 					public RowAccessType next() throws FemtoDBIOException, FemtoDBConcurrentModificationException {
-						serviceNumber++;
-						List<FileMetadata> fileMetadataL = fileMetadata;
-						if(hasPrimaryKey)
+						synchronized(TableCore.this)
 						{
-							int nextFMDIndex = fileMetadataBinarySearch(primaryKey);
-							if(nextFMDIndex == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");
-							FileMetadata nextFMD = fileMetadataL.get(nextFMDIndex);
-							
-							// catch case of an empty tableCore (as primaryKeyBinarySearch would return its first row)
-							if(nextFMD.rows <= 0)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");						
-							
-							int page = cachePageOf(nextFMD);						
-							int row = primaryKeyBinarySearch(page, primaryKey, false, false);
-							if(row == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");
-							row++; // move forward by one
-							if(row < nextFMD.rows)
+							serviceNumber++;
+							List<FileMetadata> fileMetadataL = fileMetadata;
+							if(hasPrimaryKey)
 							{
-								RowAccessType retval = getRowAccessType(nextFMD, row);
-								nextFMD.lastUsedServiceNumber = serviceNumber;
-								primaryKey = retval.primaryKey;
-								hasPrimaryKey = true;
-								return retval;								
+								int nextFMDIndex = fileMetadataBinarySearch(primaryKey);
+								if(nextFMDIndex == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");
+								FileMetadata nextFMD = fileMetadataL.get(nextFMDIndex);
+								
+								// catch case of an empty tableCore (as primaryKeyBinarySearch would return its first row)
+								if(nextFMD.rows <= 0)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");						
+								int page = cachePageOf(nextFMD);						
+								int row = primaryKeyBinarySearch(page, primaryKey, false, false);
+								if(row == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");
+								row++; // move forward by one
+								if(row < nextFMD.rows)
+								{
+									RowAccessType retval = getRowAccessType(nextFMD, row);
+									nextFMD.lastUsedServiceNumber = serviceNumber;
+									primaryKey = retval.primaryKey;
+									hasPrimaryKey = true;
+									return retval;								
+								}
+								else
+								{
+									// seek forward through files for next row
+									int fmdSize = fileMetadataL.size();
+									nextFMDIndex++;
+									
+									while(nextFMDIndex < fmdSize)
+									{
+										nextFMD = fileMetadataL.get(nextFMDIndex);
+										if(nextFMD.rows > 0)
+										{
+											RowAccessType retval = getRowAccessType(nextFMD, 0);
+											nextFMD.lastUsedServiceNumber = serviceNumber;
+											primaryKey = retval.primaryKey;
+											hasPrimaryKey = true;
+											return retval;	
+										}
+										nextFMDIndex++;
+									}
+									return null; // must be an empty tableCore	
+								}			
 							}
 							else
 							{
-								// seek forward through files for next row
-								int fmdSize = fileMetadataL.size();
-								nextFMDIndex++;
-								
-								while(nextFMDIndex < fmdSize)
+								// OK we need to find the first primary key
+								int fmdIndex 		= 0;
+								int fmdSize 		= fileMetadataL.size();
+								while(fmdIndex < fmdSize)
 								{
-									nextFMD = fileMetadataL.get(nextFMDIndex);
+									FileMetadata nextFMD = fileMetadataL.get(fmdIndex);
 									if(nextFMD.rows > 0)
 									{
 										RowAccessType retval = getRowAccessType(nextFMD, 0);
-										nextFMD.lastUsedServiceNumber = serviceNumber;
 										primaryKey = retval.primaryKey;
 										hasPrimaryKey = true;
-										return retval;	
+										nextFMD.lastUsedServiceNumber = serviceNumber;
+										return retval;										
 									}
-									nextFMDIndex++;
+									fmdIndex++;
 								}
 								return null; // must be an empty tableCore	
-							}			
-						}
-						else
-						{
-							// OK we need to find the first primary key
-							int fmdIndex 		= 0;
-							int fmdSize 		= fileMetadataL.size();
-							while(fmdIndex < fmdSize)
-							{
-								FileMetadata nextFMD = fileMetadataL.get(fmdIndex);
-								if(nextFMD.rows > 0)
-								{
-									RowAccessType retval = getRowAccessType(nextFMD, 0);
-									primaryKey = retval.primaryKey;
-									hasPrimaryKey = true;
-									nextFMD.lastUsedServiceNumber = serviceNumber;
-									return retval;										
-								}
-								fmdIndex++;
 							}
-							return null; // must be an empty tableCore	
 						}
 					}
 
 					@Override
 					public void remove() throws FemtoDBConcurrentModificationException, FemtoDBIOException {
-						serviceNumber++;
-						System.out.println("**** REMOVE CALLED ****");
-						System.out.println("looking for primary key " + primaryKey);
-						if(!hasPrimaryKey)return;
-						List<FileMetadata> fileMetadataL = fileMetadata;
-						
-						int removeFMDIndex = fileMetadataBinarySearch(primaryKey);
-						if(removeFMDIndex == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");
-						FileMetadata removeFMD = fileMetadataL.get(removeFMDIndex);	
-						if(removeFMD.rows <= 0)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");						
-						int page = cachePageOf(removeFMD);							
-						int row = primaryKeyBinarySearch(page, primaryKey, false, false);
-						if(row == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");
-						System.out.println("believe it is in row " + row + "of");
-						if(row > 0)
+						synchronized(TableCore.this)
 						{
-							System.out.println("safeIterator deleting row " + row);
-							deleteRow(primaryKey, page, row);
-							row--;
-							System.out.println("now looing up row " + row);
-							primaryKey = getPrimaryKeyForCacheRow(page, row);
-							System.out.println("which gave primary key " + primaryKey);
-							return;
-						}
-						else
-						{
-							System.out.println("safeIterator deleting first row");
-							deleteRow(primaryKey, page, row);
-							removeFMDIndex--;
-							while(removeFMDIndex >= 0)
+							serviceNumber++;
+							System.out.println("**** REMOVE CALLED ****");
+							System.out.println("looking for primary key " + primaryKey);
+							if(!hasPrimaryKey)return;
+							List<FileMetadata> fileMetadataL = fileMetadata;
+							
+							int removeFMDIndex = fileMetadataBinarySearch(primaryKey);
+							if(removeFMDIndex == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");
+							FileMetadata removeFMD = fileMetadataL.get(removeFMDIndex);	
+							if(removeFMD.rows <= 0)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");						
+							int page = cachePageOf(removeFMD);							
+							int row = primaryKeyBinarySearch(page, primaryKey, false, false);
+							if(row == -1)throw new FemtoDBConcurrentModificationException("Primary key " + primaryKey + " disappeared from " + TableCore.this.name + " while iterating");
+							System.out.println("believe it is in row " + row + "of");
+							if(row > 0)
 							{
-								removeFMD = fileMetadataL.get(removeFMDIndex);
-								System.out.println("looking for row in " + removeFMD.filename);								
-								if(removeFMD.rows > 0)
-								{
-									System.out.println("it has " + removeFMD.rows + " rows");	
-									row = removeFMD.rows - 1;
-									primaryKey = getPrimaryKeyForCacheRow(page, row);
-									System.out.println("last one has primary key " + primaryKey);
-									return;		
-								}
-								removeFMDIndex--;
+								System.out.println("safeIterator deleting row " + row);
+								deleteRow(primaryKey, page, row);
+								row--;
+								System.out.println("now looing up row " + row);
+								primaryKey = getPrimaryKeyForCacheRow(page, row);
+								System.out.println("which gave primary key " + primaryKey);
+								return;
 							}
-							// empty tableCore so reset iterator
-							System.out.println("empty tableCore so reset the iterator");
-							reset();
-							return;
+							else
+							{
+								System.out.println("safeIterator deleting first row");
+								deleteRow(primaryKey, page, row);
+								removeFMDIndex--;
+								while(removeFMDIndex >= 0)
+								{
+									removeFMD = fileMetadataL.get(removeFMDIndex);
+									System.out.println("looking for row in " + removeFMD.filename);								
+									if(removeFMD.rows > 0)
+									{
+										System.out.println("it has " + removeFMD.rows + " rows");	
+										row = removeFMD.rows - 1;
+										primaryKey = getPrimaryKeyForCacheRow(page, row);
+										System.out.println("last one has primary key " + primaryKey);
+										return;		
+									}
+									removeFMDIndex--;
+								}
+								// empty tableCore so reset iterator
+								System.out.println("empty tableCore so reset the iterator");
+								reset();
+								return;
+							}
 						}
 					}
 					
@@ -1859,7 +1938,13 @@ public class TableCore implements Serializable{
 	//*******************************************************************
 	//*******************************************************************
 	//*******************************************************************
- 
+	synchronized
+	final void shutdownTable() throws FemtoDBIOException
+	{
+		shuttingDown = true;
+		flushCache();
+	}
+	
 	final void flushCache() throws FemtoDBIOException
     {
     	if(!operational)return;
@@ -1869,34 +1954,91 @@ public class TableCore implements Serializable{
     	}	
     }
 	
+	synchronized
     final void finishLoading(FemtoDB database)
     {
     	this.database = database;
 		tableDirectory = database.getPath() + File.separator + Long.toString(tableNumber);
-    
+		this.shuttingDown = false;
+		
 		if(operational)
     	{
     		allocateMemory();
-    		System.out.println(tableDirectory);
     		for(int x = 0; x < fileMetadata.size(); x++)
     		{
     			fileMetadata.get(x).finishLoading(this);
-    			System.out.println(fileMetadata.get(x).hashCode());
     		}
     	}	
     }
     
-    final void backupCompletely(String destString) throws IOException
-    {
+    synchronized
+    final void backupCompletely(String destDirectory) throws FemtoDBIOException
+    {  			
+		// create or overwrite the table file
+    	generateTableFile(this,destDirectory);
     	
+    	if(!operational)return;
+    	
+    	// create empty directory to hold the data files if it does not exist
+		String tableDirectoryString = destDirectory + File.separator + Long.toString(tableNumber);
+		File tableDirectoryFile = new File(tableDirectoryString);
+		if(tableDirectoryFile.exists())tableDirectoryFile.delete();
+		tableDirectoryFile.mkdirs();
+		
+		// backup the data files
+		flushCache();
     	for(FileMetadata fmd : fileMetadata)
     	{
     		File sourceFile = new File(fmd.filename);
-    		String fullDestString = destString + File.separator + Long.toString(fmd.filenumber);
+    		String fullDestString = destDirectory + File.separator + Long.toString(fmd.filenumber);
     		File destFile = new File(fullDestString);
-    		FileUtils.copyFile(sourceFile, destFile);
+    		try {
+				FileUtils.copyFile(sourceFile, destFile);
+			} catch (IOException e) {
+				throw new FemtoDBIOException("During backup or save of table " + name + " IOException occured copying table data to file:" + fullDestString);
+			}
     	}
     }
+    
+	/** Serialises a given tableCore object into to the directory given by the destString argument. It does not serialise the associated tableCores data files. */
+	private void generateTableFile(TableCore t, String destDirectory) throws FemtoDBIOException
+	{
+		// delete it if it exists
+		String tableFileString = destDirectory + File.separator + "tableCore" + t.tableNumber;
+		File tableFile = new File(tableFileString);
+		if(tableFile.exists())tableFile.delete();
+		
+		// save the tableCore to the destDirectory
+		OutputStream 		table_os = null;
+		ObjectOutputStream 	table_oos = null; 
+		try {
+			table_os = new FileOutputStream(tableFile);
+			table_oos = new ObjectOutputStream(table_os);
+			table_oos.writeObject(t);		
+		} catch (FileNotFoundException e) {
+			throw new FemtoDBIOException("The following directory used for backup or save does not exist: " + destDirectory, e);
+		} catch (IOException e) {
+			throw new FemtoDBIOException("Unable to save or backup table " + name + " an IOException occured creating the following file: " + tableFileString, e);
+		} finally
+		{
+			if(table_oos != null)
+			{
+				try {
+					table_oos.close();
+				} catch (IOException e) {
+					throw new FemtoDBIOException("Unable to close table file " + name + " during a backup or save at location: " + tableFileString, e);
+				}
+			}
+			if(table_os != null)
+			{
+				try {
+					table_os.close();
+				} catch (IOException e) {
+					throw new FemtoDBIOException("Unable to close table file " + name + " during a backup or save at location: " + tableFileString, e);
+				}
+			}		
+		}
+	}
 	
 	boolean validateTable(String path)
 	{
