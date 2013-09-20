@@ -2040,6 +2040,24 @@ public class TableCore implements Serializable{
 		}
 	}
 	
+	/** Serialises a given tableCore object into to the directory given by the destString argument. It does not serialise the associated tableCores data files. */
+	private void deleteTableFile(TableCore t, String destDirectory) throws FemtoDBIOException
+	{
+		// delete it if it exists
+		String tableFileString = destDirectory + File.separator + "tableCore" + t.tableNumber;
+		File tableFile = new File(tableFileString);
+		if(tableFile.exists())tableFile.delete();
+	}
+	
+	/** Serialises a given tableCore object into to the directory given by the destString argument. It does not serialise the associated tableCores data files. */
+	private void deleteTableDataDirectory(TableCore t, String destDirectory) throws FemtoDBIOException
+	{
+		// delete it if it exists
+		String dataDirectoryString = destDirectory + File.separator + Long.toString(t.tableNumber);
+		File dataDirectory = new File(dataDirectoryString);
+		if(dataDirectory.exists())dataDirectory.delete();
+	}
+	
 	boolean validateTable(String path)
 	{
 		String tableDirectoryString = path + File.separator + Long.toString(tableNumber);
@@ -2054,6 +2072,14 @@ public class TableCore implements Serializable{
     		if( fileToCheckSize != expectedSize )return false;
     	}
 		return true;	
+	}
+	
+	synchronized
+	void deleteTable(String path) throws FemtoDBIOException
+	{
+		deleted = true;
+		deleteTableFile(this, path);
+		deleteTableDataDirectory(this, path);
 	}
 	
 	//*******************************************************************

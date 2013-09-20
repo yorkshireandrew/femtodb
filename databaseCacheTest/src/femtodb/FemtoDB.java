@@ -62,9 +62,52 @@ public class FemtoDB implements Serializable, Lock {
 		long tableNumber 			= nextUnusedTableNumber++;
 		TableCore newTable 			= new TableCore(this, name, tableNumber, primaryKeyName);
 		tableCores.add(newTable);
-		tableCoreMap.put(name, newTable);
+		tableCoreMap.put(name, newTable);	
 		unlock();
 		return newTable;
+	}
+	
+	/** Obtains a lock on the database then returns the named tableCore */
+	public TableCore getTable(String name) throws FemtoDBShuttingDownException
+	{
+		lock(); // ensure we have the database lock
+		if(shuttingDown)
+		{
+			unlock();
+			throw new FemtoDBShuttingDownException();
+		}
+		TableCore retval = tableCoreMap.get(name);
+		unlock();
+		return retval;
+	}
+	
+	/** Obtains the database lock then creates a new tableCore in the database, requiring a name for the tableCore and (optionally) a name for the primary key column 
+	 * @throws FemtoDBShuttingDownException 
+	 * @throws FemtoDBIOException */	
+	public void deleteTable(String name) throws FemtoDBShuttingDownException, FemtoDBIOException
+	{
+		lock(); // ensure we have the database lock
+		if(shuttingDown)
+		{
+			unlock();
+			throw new FemtoDBShuttingDownException();
+		}
+		
+		TableCore t = tableCoreMap.get(name);
+		if(t != null)
+		{
+			tableCores.remove(t);
+			tableCoreMap.remove(t);
+			try{
+				t.deleteTable(path);
+			}
+			catch(FemtoDBIOException e)
+			{
+				unlock();
+				throw e;
+			}
+		}		
+		unlock();
 	}
 	
 	/** Shuts down the database 
