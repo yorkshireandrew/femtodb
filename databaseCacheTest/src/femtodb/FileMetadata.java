@@ -38,16 +38,16 @@ public class FileMetadata implements Serializable{
 	boolean				modified;
 	
 	FileMetadata(
-			TableCore owner,
-			long filenumber, 
-			long lowerBound, 
-			long upperBound,
-			long smallestPK,
-			long largestPK,
-			boolean cached,
-			int cacheIndex, 
-			int rows,
-			long modificationServiceNumber)
+			final TableCore owner,
+			final long filenumber, 
+			final long lowerBound, 
+			final long upperBound,
+			final long smallestPK,
+			final long largestPK,
+			final boolean cached,
+			final int cacheIndex, 
+			final int rows,
+			final long modificationServiceNumber)
 	{
 		this.owner = owner;
 		this.filenumber = filenumber;

@@ -36,7 +36,7 @@ public class FemtoDB implements Serializable, Lock {
 	private String				backupDirectory;	
 	
 	/** Constructs a database core requiring a name as an argument. The setPath method must be also called before the database can be used */
-	public FemtoDB(String name)
+	public FemtoDB(final String name)
 	{
 		this.name				= name;
 		path					= null;
@@ -50,7 +50,7 @@ public class FemtoDB implements Serializable, Lock {
 	
 	/** Obtains the database lock then creates a new tableCore in the database, requiring a name for the tableCore and (optionally) a name for the primary key column 
 	 * @throws FemtoDBShuttingDownException */	
-	public TableCore createTable(String name, String primaryKeyName) throws FemtoDBShuttingDownException
+	public final TableCore createTable(final String name, final String primaryKeyName) throws FemtoDBShuttingDownException
 	{
 		lock(); // ensure we have the database lock
 		if(shuttingDown)
@@ -68,7 +68,7 @@ public class FemtoDB implements Serializable, Lock {
 	}
 	
 	/** Obtains a lock on the database then returns the named tableCore */
-	public TableCore getTable(String name) throws FemtoDBShuttingDownException
+	public final TableCore getTable(final String name) throws FemtoDBShuttingDownException
 	{
 		lock(); // ensure we have the database lock
 		if(shuttingDown)
@@ -84,7 +84,7 @@ public class FemtoDB implements Serializable, Lock {
 	/** Obtains the database lock then creates a new tableCore in the database, requiring a name for the tableCore and (optionally) a name for the primary key column 
 	 * @throws FemtoDBShuttingDownException 
 	 * @throws FemtoDBIOException */	
-	public void deleteTable(String name) throws FemtoDBShuttingDownException, FemtoDBIOException
+	public final void deleteTable(final String name) throws FemtoDBShuttingDownException, FemtoDBIOException
 	{
 		lock(); // ensure we have the database lock
 		if(shuttingDown)
@@ -112,15 +112,17 @@ public class FemtoDB implements Serializable, Lock {
 	
 	/** Shuts down the database 
 	 * @throws FemtoDBIOException */
-	public void shutdown() throws FemtoDBIOException 
+	public final void shutdown() throws FemtoDBIOException 
 	{
 		if(shuttingDown)return;
 		
 		// acquire the database lock as a high priority
 		databaseLock.shutdownLock();
 		shuttingDown = true;
+		if(path == null)return;
 		
 		try{
+			generateDatabaseFile(path);
 			for(TableCore t: tableCores)
 			{
 				t.shutdownTable();
@@ -141,7 +143,7 @@ public class FemtoDB implements Serializable, Lock {
 	
 	/** Obtains the database lock then creates a backup of the database at its backupDirectory. The method automatically creates ping and pong subdirectories if they do not exist. If a backup exists the method will overwrite the oldest (or the most invalid) ping or pong backup. 
 	 * @throws FemtoDBShuttingDownException */
-	public void backup()  throws FemtoDBIOException, FemtoDBShuttingDownException
+	public final void backup()  throws FemtoDBIOException, FemtoDBShuttingDownException
 	{
 		// we can only proceed once we hold the database lock
 		lock();
@@ -167,7 +169,7 @@ public class FemtoDB implements Serializable, Lock {
 	}
 		
 	/** Creates a backup of the database at its backupDirectory. The method automatically creates ping and pong subdirectories if they do not exist. If a backup exists the method will overwrite the oldest (or the most invalid) ping or pong backup. */
-	private void backupInternal() throws FemtoDBShuttingDownException, FemtoDBIOException, FileNotFoundException
+	private final void backupInternal() throws FemtoDBShuttingDownException, FemtoDBIOException, FileNotFoundException
 	{
 		// check we are not shutting down
 		if(shuttingDown)throw new FemtoDBShuttingDownException();
@@ -192,7 +194,6 @@ public class FemtoDB implements Serializable, Lock {
 			if(!pong.mkdir()) throw new FemtoDBIOException("Database " + name + " was unable to create the following directory when backing up: " + pongDirectoryString);
 		}
 		
-
 		// Decide if to write to ping or pong
 		long 	validPingDatabaseStart = getDatabaseStart(pingDirectoryString, false);	
 		long 	validPongDatabaseStart = getDatabaseStart(pongDirectoryString, false);
@@ -247,7 +248,7 @@ public class FemtoDB implements Serializable, Lock {
 		}
 	}
 	
-	private void backupCompletelyTo(String destDirectory) throws FileNotFoundException, FemtoDBIOException
+	private final void backupCompletelyTo(final String destDirectory) throws FileNotFoundException, FemtoDBIOException
 	{
 		if(path == null)throw new FemtoDBIOException("Database " + name + " backup was attempted before the database path was set");
 		// remove the old directory if it exists and generate a new one
@@ -269,14 +270,14 @@ public class FemtoDB implements Serializable, Lock {
 		generateFinishFile(destDirectory);
 	}
 	
-	private void backupIncrementalTo(String destString) throws FileNotFoundException, FemtoDBIOException
+	private final void backupIncrementalTo(final String destString) throws FileNotFoundException, FemtoDBIOException
 	{
 		//TODO
 		backupCompletelyTo(destString);
 	}
 	
 	/** Generates a start file in the directory given by the destString argument, removing the older one if it exists. */
-	private void generateStartFile(String destString) throws FemtoDBIOException
+	private final void generateStartFile(final String destString) throws FemtoDBIOException
 	{
 		String startFileString = destString + File.separator + "start";
 		File startFile = new File(startFileString);
@@ -316,7 +317,7 @@ public class FemtoDB implements Serializable, Lock {
 	}
 	
 	/** Generates a database file in the directory given by the destString argument, removing the older one if it exists. */
-	private void generateDatabaseFile(String destString) throws FemtoDBIOException
+	private final void generateDatabaseFile(final String destString) throws FemtoDBIOException
 	{
 		String databaseFileString = destString + File.separator + "database";
 		File databaseFile = new File(databaseFileString);
@@ -355,7 +356,7 @@ public class FemtoDB implements Serializable, Lock {
 	}
 	
 	/** Generates a finish file in the directory given by the destString argument, removing the older one if it exists. */
-	private void generateFinishFile(String destString) throws FemtoDBIOException
+	private final void generateFinishFile(final String destString) throws FemtoDBIOException
 	{
 		String finishFileString = destString + File.separator + "finish";
 		File finishFile = new File(finishFileString);
@@ -401,7 +402,7 @@ public class FemtoDB implements Serializable, Lock {
 	// **************************************************	
 	
 	/** Returns the database at the location given by the path argument if it exists */
-	private static FemtoDB openInternal(String path, String backupDirectory) throws FileNotFoundException, FemtoDBIOException
+	private final static FemtoDB openInternal(final String path, final String backupDirectory) throws FileNotFoundException, FemtoDBIOException
 	{
 		String databaseFileString = path + File.separator + "database";	
 		File databaseFile = new File(databaseFileString);
@@ -427,13 +428,13 @@ public class FemtoDB implements Serializable, Lock {
 		}	
 	}
 	
-	private void setBackupDirectory(String backupDirectory) {
+	public final void setBackupDirectory(final String backupDirectory) {
 		this.backupDirectory = backupDirectory;	
 	}
 
 	/** Returns the database at the location given by the path argument. If it appears to be corrupt or was incorrectly shutdown then
 	 * the ping and pong backups present in the directory given by the backup argument are used to attempt a database recovery.  */
-	public static FemtoDB open(String path, String backupDirectory) throws FileNotFoundException, FemtoDBIOException
+	public final static FemtoDB open(final String path, final String backupDirectory) throws FileNotFoundException, FemtoDBIOException
 	{
 		// Open the database if it is not corrupt or was incorrectly shutdown
 		long databaseStart = getDatabaseStart(path,true);
@@ -520,7 +521,7 @@ public class FemtoDB implements Serializable, Lock {
 	}
 	
 	/** Aligns all the paths held in tableCores to the databases current path */ 
-	private void loadTables()
+	private final void loadTables()
 	{
 		for(TableCore t: tableCores)
 		{
@@ -529,7 +530,7 @@ public class FemtoDB implements Serializable, Lock {
 	}
 	
 	/** Returns the start time (in milliseconds) of the database or backup at the given path, or -1 if that backup looks corrupt or did not complete. */
-	private static long getDatabaseStart(String path, boolean validateFully)
+	private static final long getDatabaseStart(final String path, final boolean validateFully)
 	{
 		String startFileString		= path + File.separator + "start";
 		String finishFileString		= path + File.separator + "finish";
@@ -574,7 +575,7 @@ public class FemtoDB implements Serializable, Lock {
 					// check it is possible to read all the tableCore files
 					for(TableCore t: backedUpTables)
 					{
-						String tableFileString = path + File.separator + "tableCore" + Long.toString(t.tableNumber);
+						String tableFileString = path + File.separator + "tableCore" + Long.toString(t.getTableNumber());
 						InputStream isForTable = null;
 						ObjectInputStream oisForTable = null;
 						TableCore readTable = null;
@@ -583,7 +584,7 @@ public class FemtoDB implements Serializable, Lock {
 							isForTable = new FileInputStream(tableFileString);
 							oisForTable = new ObjectInputStream(isForTable);
 							readTable = (TableCore) oisForTable.readObject();
-							temp += readTable.tableNumber;
+							temp += readTable.getTableNumber();
 							if(validateFully)
 							{
 								if(!readTable.validateTable(path)){tableReadFault = true;}
@@ -641,7 +642,7 @@ public class FemtoDB implements Serializable, Lock {
 	}
 
 	/** Sets the path of the database and generates a new start file in that location. It does not set the paths in the databases tableCores */
-	public final void setPath(String path) throws FemtoDBIOException {
+	public final void setPath(final String path) throws FemtoDBIOException {
 		this.path = path;
 		File pathFile = new File(path);
 		if(pathFile.exists())
@@ -655,20 +656,20 @@ public class FemtoDB implements Serializable, Lock {
 	// ****************** Locking **********************************
 	
 	@Override
-	public void lock() {databaseLock.lock();}
+	public final void lock() {databaseLock.lock();}
 
 	/** Blocks until the database lock has been obtained. If the calling thread gets interrupted the method throws an InterruptedException. */ 
 	@Override
-	public void lockInterruptibly() throws InterruptedException 
+	public final void lockInterruptibly() throws InterruptedException 
 	{databaseLock.lockInterruptibly();}
 
 	/** Attempts to acquire the database lock returning immediately. If there are no threads currently holding the database lock then the caller is given the lock and the method will return true. */
 	@Override
-	public boolean tryLock() {return databaseLock.tryLock();}
+	public final boolean tryLock() {return databaseLock.tryLock();}
 
 	/** Attempts to acquire the database lock with a timeout (using units specified in java.util.concurrent.TimeUnit). The method returns true if the lock was acquired within the timeout.*/
 	@Override
-	public boolean tryLock(long time, TimeUnit unit) throws InterruptedException 
+	public final boolean tryLock(long time, TimeUnit unit) throws InterruptedException 
 	{
 		return databaseLock.tryLock(time, unit);
 	}
@@ -678,11 +679,11 @@ public class FemtoDB implements Serializable, Lock {
 	 * they arrived. However if backup or shutdown are called that thread is given priority.
 	 */
 	@Override
-	public void unlock() {databaseLock.unlock();}
+	public final void unlock() {databaseLock.unlock();}
 
 	/** Not implemented */
 	@Override
-	public Condition newCondition() {
+	public final Condition newCondition() {
 		// NOT IMPLEMENTED
 		return null;
 	}
@@ -711,13 +712,13 @@ public class FemtoDB implements Serializable, Lock {
 	}
 	
 	/** Returns true if the database lock is currently held by the calling thread */
-	public boolean isHeldByCurrentThread()
+	public final boolean isHeldByCurrentThread()
 	{
 		return databaseLock.isHeldByCurrentThread();
 	}
 	
 	/** Returns true if a thread currently holds the database lock */
-	public boolean isLocked()
+	public final boolean isLocked()
 	{
 		return databaseLock.isLocked();
 	}

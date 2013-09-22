@@ -10,7 +10,13 @@ import java.io.OutputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
 import femtodbexceptions.FemtoDBConcurrentModificationException;
 import femtodbexceptions.FemtoDBIOException;
 import femtodbexceptions.FemtoDBInvalidValueException;
@@ -19,7 +25,7 @@ import femtodbexceptions.FemtoDBPrimaryKeyUsedException;
 import femtodbexceptions.FemtoDBShuttingDownException;
 import femtodbexceptions.FemtoDBTableDeletedException;
 
-public class TableCore implements Serializable{
+public class TableCore implements Serializable, Lock{
 	private static final long serialVersionUID = 1L;
 	
 	static final int 			DEFAULT_FILE_SIZE_IN_BYTES				= 3000;
@@ -41,7 +47,7 @@ public class TableCore implements Serializable{
 	private final String 		name;
 	
 	/** The tableCore number */
-	long						tableNumber;
+	private long				tableNumber;
 	
 	/** The directory the tables files will be put in. Declared transient so it adapts to operating system seperators */
 	private transient String	tableDirectory;
@@ -128,7 +134,10 @@ public class TableCore implements Serializable{
 	/** Indicates the table is shutting down */
 	private boolean							shuttingDown;
 	
-	
+	/** Locking */
+	private transient ReentrantLock			tableLock;
+	private boolean							shutdownNeedsLock;
+	private boolean							backupNeedsLock;
 		
 	//*******************************************************************
 	//*******************************************************************
@@ -138,7 +147,7 @@ public class TableCore implements Serializable{
 	//*******************************************************************
 	//*******************************************************************	
 
-	TableCore(FemtoDB database, String name, long tableNumber, String primaryKeyName)
+	TableCore(final FemtoDB database, final String name, final long tableNumber, String primaryKeyName)
 	{
 		this.database		= database;
 		this.name			= name;
@@ -167,6 +176,11 @@ public class TableCore implements Serializable{
 		
 		// set service number to a very low number, but not too low for the LRU algorithm
 		serviceNumber 			= Long.MIN_VALUE + NOT_MODIFIED_LRU_BOOST + OVER_HALF_FULL_LRU_BOOST + 100;
+
+		// Table lock
+		tableLock 				= new ReentrantLock(true);
+		backupNeedsLock 		= false;
+		shutdownNeedsLock 		= false;
 	}
 
 	//*******************************************************************
@@ -178,7 +192,7 @@ public class TableCore implements Serializable{
 	//*******************************************************************
 	
 	/** Adds a byte column to the tableCore */
-	final void addByteColumn(String columnName)
+	public final void addByteColumn(String columnName)
 	{
 		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
@@ -188,7 +202,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Adds a Boolean column to the tableCore, its true width is one byte */
-	final void addBooleanColumn(String columnName)
+	public final void addBooleanColumn(final String columnName)
 	{
 		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
@@ -198,7 +212,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Adds a byte array column to the tableCore, its true width is width + 4 bytes to encode length*/
-	final void addBytesColumn(String columnName, int width) 
+	public final void addBytesColumn(final String columnName, final int width) 
 	{
 		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
@@ -209,7 +223,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Adds a Short column to the tableCore, its true width is 2 bytes */
-	final void addShortColumn(String columnName)
+	public final void addShortColumn(final String columnName)
 	{
 		if(operational)return;
 		columnNames = addToArray(columnNames, columnName);
@@ -219,7 +233,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Adds a Character column to the tableCore, its true width is 2 bytes */
-	final void addCharColumn(String columnName)
+	public final void addCharColumn(final String columnName)
 	{
 		if(operational)return;
 		columnNames = addToArray(columnNames, columnName);
@@ -229,7 +243,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Adds a Integer column to the tableCore, its true width is 2 bytes */
-	final void addIntegerColumn(String columnName)
+	public final void addIntegerColumn(final String columnName)
 	{
 		if(operational)return;
 		columnNames = addToArray(columnNames, columnName);
@@ -239,7 +253,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Adds a Long column to the tableCore, its true width is 2 bytes */
-	final void addLongColumn(String columnName)
+	public final void addLongColumn(final String columnName)
 	{
 		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
@@ -249,7 +263,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Adds a Float column to the tableCore, its true width is 2 bytes */
-	final void addFloatColumn(String columnName)
+	public final void addFloatColumn(final String columnName)
 	{
 		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
@@ -259,7 +273,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Adds a Double column to the tableCore, its true width is 2 bytes */
-	final void addDoubleColumn(String columnName) 
+	public final void addDoubleColumn(final String columnName) 
 	{
 		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
@@ -269,7 +283,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Adds a Char array column to the tableCore, its true width is width + 2 bytes to encode length*/
-	final void addCharsColumn(String columnName, int width)
+	public final void addCharsColumn(final String columnName, final int width)
 	{
 		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
@@ -280,7 +294,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Adds a String column to the tableCore, its true width is width + 2 bytes, to encode the length. It is important to note the string gets stored in modified UTF format so the available width in characters may be less than the width parameter */
-	final void addStringColumn(String columnName, int width) 
+	public final void addStringColumn(final String columnName, final int width) 
 	{
 		if(operational) return;
 		columnNames = addToArray(columnNames, columnName);
@@ -290,19 +304,6 @@ public class TableCore implements Serializable{
 		tableWidth += trueWidth;
 	}
 	
-	//******************************************************
-	//******************************************************
-	//         END OF COLUMN ADDING METHODS
-	//******************************************************
-	//******************************************************
-
-	
-	
-	
-	
-	
-	
-	
 	//*******************************************************************
 	//*******************************************************************
 	//*******************************************************************
@@ -311,14 +312,14 @@ public class TableCore implements Serializable{
 	//*******************************************************************
 	//*******************************************************************	
 
-	final void setRowsPerFile(int rows)
+	final void setRowsPerFile(final int rows)
 	{
 		if(operational) return;
 		rowsPerFile = rows;
 		rowsPerFileSet = true;
 	}
 	
-	final void setCacheSize(int cacheSize)
+	public final void setCacheSize(final int cacheSize)
 	{
 		if(operational) return;
 		this.cacheSize = cacheSize;
@@ -330,7 +331,7 @@ public class TableCore implements Serializable{
 	//          MAKE OPERATIONAL
 	// *********************************************
 	/** Allocates memory and creates first file making the tableCore operational */
-	final void makeOperational()throws FemtoDBInvalidValueException, FemtoDBIOException
+	public final void makeOperational()throws FemtoDBInvalidValueException, FemtoDBIOException
 	{
 		if(operational) return;
 		operational = true;
@@ -437,7 +438,7 @@ public class TableCore implements Serializable{
 		}
 	}	
 	
-	private void allocateMemory()
+	private  final void allocateMemory()
 	{
 		// allocate memory for the cache
 		try{
@@ -499,16 +500,7 @@ public class TableCore implements Serializable{
 			// re-throw any memory exception providing more information
 			throw new OutOfMemoryError("TableCore " + name + " was unable to allocate its cache contents array");
 		}			
-	}
-	
-	//*******************************************************************
-	//*******************************************************************
-	//*******************************************************************
-	//     END OF TABLE MAKE OPERATIONAL METHODS
-	//*******************************************************************
-	//*******************************************************************
-	//*******************************************************************		
-	
+	}	
 	
 	//******************************************************
 	//******************************************************
@@ -534,7 +526,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Fills a given cache page reading the file referenced by its FileMetadata fmd argument from disk. The page must be made free before this method is called. */
-	private final void loadFileIntoCachePage(int page, FileMetadata fmd) throws FemtoDBIOException
+	private final void loadFileIntoCachePage(final int page, final FileMetadata fmd) throws FemtoDBIOException
 	{
 		// load the file
 		File f = new File(fmd.filename);
@@ -608,7 +600,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Ranking algorithm used to determine best LRU page in cache to swap out */
-	private final long cacheLRURankingAlgorithm(int page, int halfOfRowsPerFile)
+	private final long cacheLRURankingAlgorithm(final int page, final int halfOfRowsPerFile)
 	{
 		FileMetadata fmd = cacheContents[page];
 		if(fmd == null)return Long.MIN_VALUE; // perfect an unused page :-)
@@ -619,7 +611,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Free's a given cache page writing its contents to disk. */
-	private final void freeCachePage(int page) throws FemtoDBIOException
+	private final void freeCachePage(final int page) throws FemtoDBIOException
 	{	
 		flushCachePage(page);
 		FileMetadata fmd = cacheContents[page];
@@ -632,7 +624,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Writes a cache page to disk. */
-	private final void flushCachePage(int page) throws FemtoDBIOException
+	private final void flushCachePage(final int page) throws FemtoDBIOException
 	{	
 		FileMetadata fmd = cacheContents[page];
 		System.out.println("freeing cache page " + page);
@@ -653,15 +645,7 @@ public class TableCore implements Serializable{
 			catch(IOException e){throw new FemtoDBIOException(e.getMessage(),e);}
 		}
 	}
-	
-	//******************************************************
-	//******************************************************
-	//      END OF LOADING INTO AND FREEING CACHE CODE
-	//******************************************************
-	//******************************************************
-	
-	
-	
+
 	//******************************************************
 	//******************************************************
 	//         START OF COMBINE CODE
@@ -669,7 +653,7 @@ public class TableCore implements Serializable{
 	//******************************************************	
 	
 	/** Attempts to combine the file related to a given cache page into its neighbours, freeing the cache page*/
-	private final void tryToCombine(final int page, FileMetadata cacheToFreeFMD) throws FemtoDBIOException
+	private final void tryToCombine(final int page, final FileMetadata cacheToFreeFMD) throws FemtoDBIOException
 	{		
 		// preconditions are the page is loaded in the cache, it is not already set free and it is modified
 		System.out.println("trying combine");
@@ -762,7 +746,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Combines a given cached file, on a given cache page, into one of its neighbours */
-	private final void combineStage2(int page, FileMetadata toCombineFMD, FileMetadata targetFMD, boolean isFront) throws FemtoDBIOException
+	private final void combineStage2(final int page, final FileMetadata toCombineFMD, FileMetadata targetFMD, boolean isFront) throws FemtoDBIOException
 	{
 		// ensure targetFMD is cached
 		if(!targetFMD.cached)
@@ -799,7 +783,7 @@ public class TableCore implements Serializable{
 		fileMetadata.remove(toCombineFMD);		
 	}
 	
-	private final void combineWithFront(int page, FileMetadata toCombineFMD, FileMetadata frontFMD)
+	private final void combineWithFront(final int page, final FileMetadata toCombineFMD, final FileMetadata frontFMD)
 	{
 		frontFMD.upperBound 	= toCombineFMD.upperBound;
 		frontFMD.largestPK 		= toCombineFMD.largestPK;
@@ -827,7 +811,7 @@ public class TableCore implements Serializable{
 		System.arraycopy(flagCacheL, srcPos2, flagCacheL, destPos2, toCombineFMDRows);
 	}
 	
-	private final void combineWithBack(int page, FileMetadata toCombineFMD, FileMetadata backFMD)
+	private final void combineWithBack(final int page, final FileMetadata toCombineFMD, final FileMetadata backFMD)
 	{
 		backFMD.lowerBound 		= toCombineFMD.lowerBound;
 		backFMD.smallestPK 		= toCombineFMD.smallestPK;
@@ -868,19 +852,12 @@ public class TableCore implements Serializable{
 	
 	//******************************************************
 	//******************************************************
-	//         END OF COMBINE CODE
-	//******************************************************
-	//******************************************************	
-	
-	
-	//******************************************************
-	//******************************************************
 	//         START OF SPLITTING CODE
 	//******************************************************
 	//******************************************************	
 
 	/** Called when a page becomes full. It is split in half generating a new file and fileMetadata entry. */
-	private final void splitFile(int page, FileMetadata fmd) throws FemtoDBIOException
+	private final void splitFile(final int page, final FileMetadata fmd) throws FemtoDBIOException
 	{
 		int newRowsInFirst 					= fmd.rows >> 1; // note this is also the index of first row in second
 		int newIndexOfLastRowInFirst 		= newRowsInFirst - 1; 
@@ -923,12 +900,6 @@ public class TableCore implements Serializable{
 		catch(IOException e){throw new FemtoDBIOException(e.getMessage(),e);}
 
 	}
-	
-	//******************************************************
-	//******************************************************
-	//         END OF SPLITTING CODE
-	//******************************************************
-	//******************************************************	
 
 	//******************************************************
 	//******************************************************
@@ -939,7 +910,7 @@ public class TableCore implements Serializable{
 	/** Inserts a row with a given primary key into the tableCore, throws a PrimaryKeyUsedException if the primary key already exists. 
 	 * @throws FemtoDBTableDeletedException 
 	 * @throws FemtoDBShuttingDownException */
-	final void insert(long primaryKey, RowAccessType toInsert) throws FemtoDBIOException, FemtoDBPrimaryKeyUsedException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
+	public final void insert(final long primaryKey, final RowAccessType toInsert) throws FemtoDBIOException, FemtoDBPrimaryKeyUsedException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		boolean inserted = insertCore(primaryKey, toInsert.flags, toInsert.byteArray);
 		if(!inserted)throw new FemtoDBPrimaryKeyUsedException("Primary key " + primaryKey +" already in tableCore " + name);
@@ -948,12 +919,12 @@ public class TableCore implements Serializable{
 	/** Inserts a row with a given primary key into the tableCore or does nothing (and also returns false) if the primary key already exists. 
 	 * @throws FemtoDBTableDeletedException 
 	 * @throws FemtoDBShuttingDownException */
-	final boolean insertOrIgnore(long primaryKey, RowAccessType toInsert) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
+	final boolean insertOrIgnore(final long primaryKey, final RowAccessType toInsert) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		return insertCore(primaryKey, toInsert.flags, toInsert.byteArray);
 	}
 	
-	final boolean insertOrIgnoreByteArrayByPrimaryKey(long primaryKey, byte[] toInsert) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
+	final boolean insertOrIgnoreByteArrayByPrimaryKey(final long primaryKey, final byte[] toInsert) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 			return insertCore(primaryKey, FLAG_CACHE_NOT_SET, toInsert);
 	}
@@ -969,7 +940,7 @@ public class TableCore implements Serializable{
 	 * @throws FemtoDBTableDeletedException 
 	 */
 	synchronized
-	private final boolean insertCore(long primaryKey, short flag, byte[] toInsert) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
+	private final boolean insertCore(final long primaryKey, final short flag, final byte[] toInsert) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		if(shuttingDown)throw new FemtoDBShuttingDownException();
 		if(deleted)throw new FemtoDBTableDeletedException();
@@ -1043,7 +1014,7 @@ public class TableCore implements Serializable{
 		return true;
 	}	
 	
-	private final void insertIntoEmptyPage(long primaryKey, byte[] toInsert, int page, FileMetadata fmd)
+	private final void insertIntoEmptyPage(final long primaryKey, final byte[] toInsert, final int page, final FileMetadata fmd)
 	{
 		int 	pkCachePageStart 		= page * rowsPerFile;
 		int		cachePageStart 			= page * fileSize;
@@ -1062,23 +1033,13 @@ public class TableCore implements Serializable{
 		fmd.rows++;
 	}
 	
-	
-	//******************************************************
-	//******************************************************
-	//         END OF INSERT CODE
-	//******************************************************
-	//******************************************************
-	
-	
-	
-	
 	//******************************************************
 	//******************************************************
 	//         START OF UPDATE CODE
 	//******************************************************
 	//******************************************************
 	
-	final void update(long primaryKey, short flag, byte[] toInsert) throws FemtoDBIOException, FemtoDBPrimaryKeyNotFoundException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
+	final void update(final long primaryKey, final short flag, final byte[] toInsert) throws FemtoDBIOException, FemtoDBPrimaryKeyNotFoundException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		boolean updated = updateOrIgnore(primaryKey, flag, toInsert);
 		if(!updated)throw new FemtoDBPrimaryKeyNotFoundException("The primary key " + primaryKey + " was not found when updating a row in tableCore " + name);
@@ -1095,7 +1056,7 @@ public class TableCore implements Serializable{
 	 * @throws FemtoDBTableDeletedException 
 	 */
 	synchronized
-	final boolean updateOrIgnore(long primaryKey, short flag, byte[] toUpdate) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
+	final boolean updateOrIgnore(final long primaryKey, final short flag, final byte[] toUpdate) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		if(shuttingDown)throw new FemtoDBShuttingDownException();
 		if(deleted)throw new FemtoDBTableDeletedException();
@@ -1136,7 +1097,7 @@ public class TableCore implements Serializable{
 	 * @throws FemtoDBShuttingDownException 
 	 * @throws FemtoDBTableDeletedException */
 	synchronized
-	final int checkRowReadLock(long primaryKey) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
+	public final int checkRowReadLock(final long primaryKey) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		if(shuttingDown)throw new FemtoDBShuttingDownException();
 		if(deleted)throw new FemtoDBTableDeletedException();
@@ -1161,7 +1122,7 @@ public class TableCore implements Serializable{
 	 * @throws FemtoDBShuttingDownException 
 	 * @throws FemtoDBTableDeletedException */
 	synchronized
-	final int checkRowWriteLock(long primaryKey) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
+	public final int checkRowWriteLock(final long primaryKey) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		if(shuttingDown)throw new FemtoDBShuttingDownException();
 		if(deleted)throw new FemtoDBTableDeletedException();
@@ -1182,7 +1143,7 @@ public class TableCore implements Serializable{
 		return (isRowWriteLockedLowLevel(page,rowToCheck) ? 1 : 0);
 	}
 	
-	final boolean isRowReadLockedLowLevel(int page, int row)
+	final boolean isRowReadLockedLowLevel(final int page, final int row)
 	{
 		
 		int src1 = page * rowsPerFile + row;
@@ -1216,7 +1177,7 @@ public class TableCore implements Serializable{
 	//******************************************************	
 	
 	/** Returns the underlying byte array representation of a row, given a primary key and serviceNumber. Introduced during the initial testing phase */
-	final byte[] seekByteArray(long primaryKey) throws FemtoDBIOException
+	final byte[] seekByteArray(final long primaryKey) throws FemtoDBIOException
 	{
 		serviceNumber++;
 		System.out.println("seeking " + primaryKey);
@@ -1249,7 +1210,7 @@ public class TableCore implements Serializable{
 	 * @throws FemtoDBShuttingDownException 
 	 * @throws FemtoDBTableDeletedException */
 	synchronized
-	final RowAccessType seek(long primaryKey) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
+	public final RowAccessType seek(final long primaryKey) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		if(shuttingDown)throw new FemtoDBShuttingDownException();
 		if(deleted)throw new FemtoDBTableDeletedException();
@@ -1284,17 +1245,6 @@ public class TableCore implements Serializable{
 	
 	//******************************************************
 	//******************************************************
-	//         END OF SEEK CODE
-	//******************************************************
-	//******************************************************	
-	
-
-	
-	
-	
-	
-	//******************************************************
-	//******************************************************
 	//         START OF DELETE ROW CODE
 	//******************************************************
 	//******************************************************	
@@ -1303,7 +1253,7 @@ public class TableCore implements Serializable{
 	 * @throws FemtoDBShuttingDownException 
 	 * @throws FemtoDBTableDeletedException */
 	synchronized
-	final boolean deleteByPrimaryKey(long primaryKey) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
+	public final boolean deleteByPrimaryKey(final long primaryKey) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
 		if(shuttingDown)throw new FemtoDBShuttingDownException();
 		if(deleted)throw new FemtoDBTableDeletedException();
@@ -1323,7 +1273,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** low level row delete, page must already be in cache */
-	private final void deleteRow(long primaryKey, int page, int row) throws FemtoDBIOException
+	private final void deleteRow(final long primaryKey, final int page, final int row) throws FemtoDBIOException
 	{
 		FileMetadata fmd = cacheContents[page];
 		int fmdRows = fmd.rows;
@@ -1372,16 +1322,6 @@ public class TableCore implements Serializable{
 	
 	//******************************************************
 	//******************************************************
-	//         END OF DELETE ROW CODE
-	//******************************************************
-	//******************************************************	
-	
-	
-	
-	
-	
-	//******************************************************
-	//******************************************************
 	//         START OF GENERIC PRIMARY KEY SEARCHING CODE
 	//******************************************************
 	//******************************************************	
@@ -1418,7 +1358,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Returns the cache index for a given primary key. Requires the index for the containing file in the fileMetadata list. */
-	private final int primaryKeyBinarySearch(final int page, final long primaryKey, boolean forInsert, boolean overwritePrevention)
+	private final int primaryKeyBinarySearch(final int page, final long primaryKey, final boolean forInsert, final boolean overwritePrevention)
 	{
 		FileMetadata fmd = cacheContents[page];
 		
@@ -1469,13 +1409,6 @@ public class TableCore implements Serializable{
 		return testIndex;		
 	}
 	
-	
-	//******************************************************
-	//******************************************************
-	//         END OF GENERIC PRIMARY KEY SEARCHING CODE
-	//******************************************************
-	//******************************************************	
-	
 	//******************************************************
 	//******************************************************
 	//        START OF ITERATORS
@@ -1487,7 +1420,7 @@ public class TableCore implements Serializable{
 	 * the iterator is in use.
 	 * @return The FemtoDBIterator
 	 */
-	FemtoDBIterator fastIterator()
+	public final FemtoDBIterator fastIterator()
 	{
 		return (new FemtoDBIterator()
 				{
@@ -1499,7 +1432,7 @@ public class TableCore implements Serializable{
 					boolean 		hasNextCalledLastResult = false;
 					
 					@Override
-					public boolean hasNext() {
+					public final boolean hasNext() {
 						synchronized(TableCore.this)
 						{
 							// if next() was not called since last call, then send previous result
@@ -1552,7 +1485,7 @@ public class TableCore implements Serializable{
 					}
 
 					@Override
-					public RowAccessType next() throws FemtoDBIOException {
+					public final RowAccessType next() throws FemtoDBIOException {
 						synchronized(TableCore.this)
 						{
 							serviceNumber++;
@@ -1603,13 +1536,13 @@ public class TableCore implements Serializable{
 					}
 
 					@Override
-					public void remove() {
+					public final void remove() {
 						// We don't support remove() because it may alter the fileMetadata tableCore, corrupting the iterator
 						throw new UnsupportedOperationException();
 					}
 					
 					@Override
-					public void reset() 
+					public final void reset() 
 					{
 						fmd = null;
 						hasNextCalledLast 		= false;
@@ -1617,7 +1550,7 @@ public class TableCore implements Serializable{
 					}
 					
 					/** Private method used by Fast Iterator only */
-					private RowAccessType getRowAccessType(FileMetadata fmd, int row) throws FemtoDBIOException
+					private final RowAccessType getRowAccessType(final FileMetadata fmd, final int row) throws FemtoDBIOException
 					{
 						int page = cachePageOf(fmd);
 						long primaryKey = getPrimaryKeyForCacheRow(page, row);					
@@ -1638,7 +1571,7 @@ public class TableCore implements Serializable{
 	 * FemtoDBConcurrentModificationException being thrown the next time the iterator is used.
 	 * @return A FemtoDBIterator to that iterates over all the rows of the table
 	 */
-	FemtoDBIterator safeIterator()
+	public final FemtoDBIterator safeIterator()
 	{
 		return (new FemtoDBIterator()
 				{
@@ -1646,7 +1579,7 @@ public class TableCore implements Serializable{
 					long 			primaryKey;
 					
 					@Override
-					public boolean hasNext() throws FemtoDBConcurrentModificationException, FemtoDBIOException{	
+					public final boolean hasNext() throws FemtoDBConcurrentModificationException, FemtoDBIOException{	
 						synchronized(TableCore.this)
 						{
 							List<FileMetadata> fileMetadataL = fileMetadata;
@@ -1701,7 +1634,7 @@ public class TableCore implements Serializable{
 					}
 
 					@Override
-					public RowAccessType next() throws FemtoDBIOException, FemtoDBConcurrentModificationException {
+					public final RowAccessType next() throws FemtoDBIOException, FemtoDBConcurrentModificationException {
 						synchronized(TableCore.this)
 						{
 							serviceNumber++;
@@ -1772,7 +1705,7 @@ public class TableCore implements Serializable{
 					}
 
 					@Override
-					public void remove() throws FemtoDBConcurrentModificationException, FemtoDBIOException {
+					public final void remove() throws FemtoDBConcurrentModificationException, FemtoDBIOException {
 						synchronized(TableCore.this)
 						{
 							serviceNumber++;
@@ -1834,7 +1767,7 @@ public class TableCore implements Serializable{
 					}
 					
 					/** Private method used by the Iterator only */
-					private RowAccessType getRowAccessType(FileMetadata fmd, int row) throws FemtoDBIOException
+					private final RowAccessType getRowAccessType(final FileMetadata fmd, final int row) throws FemtoDBIOException
 					{
 						int page = cachePageOf(fmd);
 						long primaryKey = getPrimaryKeyForCacheRow(page, row);
@@ -1848,12 +1781,6 @@ public class TableCore implements Serializable{
 		
 	}
 	
-	//******************************************************
-	//******************************************************
-	//        END OF ITERATORS
-	//******************************************************
-	//******************************************************
-	
 	//*******************************************************************
 	//*******************************************************************
 	//*******************************************************************
@@ -1863,7 +1790,7 @@ public class TableCore implements Serializable{
 	//*******************************************************************
 
 	/** Ensures a file is in the cache returning its cache page */
-	private int cachePageOf(FileMetadata fmd) throws FemtoDBIOException
+	private final int cachePageOf(final FileMetadata fmd) throws FemtoDBIOException
 	{
 		if(fmd.cached)
 		{
@@ -1877,7 +1804,7 @@ public class TableCore implements Serializable{
 		}
 	}
 	
-	private long getPrimaryKeyForCacheRow(int page,int row)
+	private long getPrimaryKeyForCacheRow(final int page, final int row)
 	{
 		// try the pkCache
 		int pkCacheIndex = page * rowsPerFile + row;
@@ -1897,7 +1824,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Returns a new int array consisting of the passed in array appended with the passed in value */
-	private int[] addToArray(int[] in, int toAdd)
+	private  final int[] addToArray(final int[] in, final int toAdd)
 	{
 		int len = in.length;
 		int[] retval = Arrays.copyOf(in, len+1);
@@ -1906,7 +1833,7 @@ public class TableCore implements Serializable{
 	}
 
 	/** Returns a new String array consisting of the passed in array  appended with the passed in value */
-	private String[] addToArray(String[] in, String toAdd)
+	private  final String[] addToArray(final String[] in, final String toAdd)
 	{
 		int len = in.length;
 		String[] retval = Arrays.copyOf(in, len+1);
@@ -1918,19 +1845,7 @@ public class TableCore implements Serializable{
 	private long nextFilenumber() {
 		return nextUnusedFileNumber++;
 	}
-	
-
-	
-	//*******************************************************************
-	//*******************************************************************
-	//*******************************************************************
-	//         END OF VARIOUS PRIVATE METHODS
-	//*******************************************************************
-	//*******************************************************************
-	//*******************************************************************
-	
-	
-	
+		
 	//*******************************************************************
 	//*******************************************************************
 	//*******************************************************************
@@ -1938,11 +1853,36 @@ public class TableCore implements Serializable{
 	//*******************************************************************
 	//*******************************************************************
 	//*******************************************************************
-	synchronized
+
 	final void shutdownTable() throws FemtoDBIOException
 	{
+		boolean requiresLockForShutdownL = shutdownNeedsLock;
+		if(requiresLockForShutdownL)tableLock.lock();
+		try
+		{
+			shutdownTableInternal();
+		}
+		finally
+		{
+			if(requiresLockForShutdownL)tableLock.unlock();
+		}	
+	}
+	
+	synchronized
+	private final void shutdownTableInternal() throws FemtoDBIOException
+	{
 		shuttingDown = true;
-		flushCache();
+		
+		String destDirectory = this.database.getPath();
+		if(destDirectory != null)
+		{
+			generateTableFile(this,destDirectory);
+		}
+		
+		if(operational)
+		{
+			flushCache();			
+		}
 	}
 	
 	final void flushCache() throws FemtoDBIOException
@@ -1955,11 +1895,12 @@ public class TableCore implements Serializable{
     }
 	
 	synchronized
-    final void finishLoading(FemtoDB database)
+    final void finishLoading(final FemtoDB database)
     {
     	this.database = database;
 		tableDirectory = database.getPath() + File.separator + Long.toString(tableNumber);
 		this.shuttingDown = false;
+		this.tableLock = new ReentrantLock(true);
 		
 		if(operational)
     	{
@@ -1971,11 +1912,25 @@ public class TableCore implements Serializable{
     	}	
     }
     
+	final void backupCompletely(final String destDirectory) throws FemtoDBIOException
+	{
+		boolean requiresLockForBackupL = backupNeedsLock;
+		if(requiresLockForBackupL)tableLock.lock();
+		try{
+			 backupCompletelyInternal(destDirectory);
+		}
+		finally
+		{
+			if(requiresLockForBackupL)tableLock.unlock();
+		}
+	}
+	
     synchronized
-    final void backupCompletely(String destDirectory) throws FemtoDBIOException
+    private final void backupCompletelyInternal(final String destDirectory)  throws FemtoDBIOException
     {  			
-		// create or overwrite the table file
-    	generateTableFile(this,destDirectory);
+		
+    	// create or overwrite the table file
+		generateTableFile(this,destDirectory);
     	
     	if(!operational)return;
     	
@@ -1987,6 +1942,7 @@ public class TableCore implements Serializable{
 		
 		// backup the data files
 		flushCache();
+	
     	for(FileMetadata fmd : fileMetadata)
     	{
     		File sourceFile = new File(fmd.filename);
@@ -2001,7 +1957,7 @@ public class TableCore implements Serializable{
     }
     
 	/** Serialises a given tableCore object into to the directory given by the destString argument. It does not serialise the associated tableCores data files. */
-	private void generateTableFile(TableCore t, String destDirectory) throws FemtoDBIOException
+	private final void generateTableFile(final TableCore t, final String destDirectory) throws FemtoDBIOException
 	{
 		// delete it if it exists
 		String tableFileString = destDirectory + File.separator + "tableCore" + t.tableNumber;
@@ -2041,7 +1997,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Serialises a given tableCore object into to the directory given by the destString argument. It does not serialise the associated tableCores data files. */
-	private void deleteTableFile(TableCore t, String destDirectory) throws FemtoDBIOException
+	private final void deleteTableFile(final TableCore t, final String destDirectory) throws FemtoDBIOException
 	{
 		// delete it if it exists
 		String tableFileString = destDirectory + File.separator + "tableCore" + t.tableNumber;
@@ -2050,7 +2006,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Serialises a given tableCore object into to the directory given by the destString argument. It does not serialise the associated tableCores data files. */
-	private void deleteTableDataDirectory(TableCore t, String destDirectory) throws FemtoDBIOException
+	private final void deleteTableDataDirectory(TableCore t, String destDirectory) throws FemtoDBIOException
 	{
 		// delete it if it exists
 		String dataDirectoryString = destDirectory + File.separator + Long.toString(t.tableNumber);
@@ -2058,7 +2014,7 @@ public class TableCore implements Serializable{
 		if(dataDirectory.exists())dataDirectory.delete();
 	}
 	
-	boolean validateTable(String path)
+	final boolean validateTable(final String path)
 	{
 		String tableDirectoryString = path + File.separator + Long.toString(tableNumber);
     	int tableWidthL = tableWidth;
@@ -2075,7 +2031,7 @@ public class TableCore implements Serializable{
 	}
 	
 	synchronized
-	void deleteTable(String path) throws FemtoDBIOException
+	void deleteTable(final String path) throws FemtoDBIOException
 	{
 		deleted = true;
 		deleteTableFile(this, path);
@@ -2090,7 +2046,7 @@ public class TableCore implements Serializable{
 	//*******************************************************************
 	//*******************************************************************
 	
-	public String toString()
+	public final String toString()
 	{
 		String retval = "";
 		retval = retval + "name: " 			+ name + "\n";
@@ -2135,7 +2091,7 @@ public class TableCore implements Serializable{
 		return retval;
 	}
 
-	public String cacheToString()
+	public final String cacheToString()
 	{
 		int cachePagesL 	= cachePages;
 		int rowsPerFileL 	= rowsPerFile;
@@ -2162,7 +2118,7 @@ public class TableCore implements Serializable{
 	}
 	
 	/** Used to create representation of the cache for debugging. Creates a left justified string of a given length */
-	private String fwid(String in, int len)
+	private final String fwid(final String in, final int len)
 	{
 		int inlen = in.length();
 		String retval = "";
@@ -2176,7 +2132,7 @@ public class TableCore implements Serializable{
 	}
 
 	/** Used to create string representation of the cache for debugging */	
-	private String bytesToString(byte[] bytes, int offset, int length)
+	private final String bytesToString(final byte[] bytes, final int offset, final int length)
 	{
 		String hex = "0123456789ABCDEF";
 		String retval = "";
@@ -2192,8 +2148,76 @@ public class TableCore implements Serializable{
 		}
 		return retval;
 	}
+
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+	//                TABLE LOCK WRAPPER
+	//*******************************************************************
+	//*******************************************************************
+	//*******************************************************************
+
+	/** Queries the number of holds on the table lock by the current thread. */
+	public final int getHoldCount() {return tableLock.getHoldCount();}
 	
+	/** Returns the thread that currently owns the table lock, or null if not owned. */
+//	public final Thread getOwner() {return tableLock.getOwner();}
 	
+	/** Returns a collection containing threads that may be waiting to acquire the table lock. */
+//	public final Collection<Thread> getQueuedThreads(){return tableLock.getQueuedThreads();} 
+
+	/** Returns an estimate of the number of threads waiting to acquire the table lock. */
+	public final int getQueueLength(){return tableLock.getQueueLength();}
+
+	/** Returns a collection containing those threads that may be waiting on the given condition associated with the table lock. */ 	
+//	public final Collection<Thread> getWaitingThreads(Condition condition){return tableLock.getWaitingThreads(condition);} 
+
+	/** Returns an estimate of the number of threads waiting on the given condition associated with the table lock. */ 
+	public final int getWaitQueueLength(final Condition condition){ return tableLock.getWaitQueueLength(condition);}
+
+	/** Queries whether the given thread is waiting to acquire the database lock. */
+	public final boolean hasQueuedThread(final Thread thread){ return tableLock.hasQueuedThread(thread);}
+
+	/** Queries whether any threads are waiting to acquire the table lock. */
+	public final boolean hasQueuedThreads(){ return tableLock.hasQueuedThreads();} 
+
+	/** Queries whether any threads are waiting on the given condition associated with the table lock. */ 
+	public final boolean hasWaiters(final Condition condition){ return tableLock.hasWaiters(condition);} 
+
+	/** Returns true because the table lock has fairness set true. */
+	public final boolean isFair(){return true;} 
+
+	/** Queries if the table lock is held by the current thread. */
+	public final boolean isHeldByCurrentThread(){ return tableLock.isHeldByCurrentThread();}
+
+	/** Queries if the table lock is held by any thread. */
+	public final boolean isLocked(){ return tableLock.isLocked();}
+	
+	/** Acquires the table lock, blocking until it is obtained */
+	@Override
+	public final void lock() {tableLock.lock();} 
+	
+	/** Acquires the table lock unless the current thread is interrupted. */
+	@Override
+	public final void lockInterruptibly() throws InterruptedException
+	{tableLock.lockInterruptibly();}
+	
+	/** Returns a Condition instance for use with the table lock. */
+	@Override
+	public final Condition newCondition(){return tableLock.newCondition();} 
+	
+	/** Acquires the table lock only if it is not held by another thread at the time of invocation. */
+	@Override
+	public final boolean tryLock(){return tableLock.tryLock();}
+
+	/** Acquires the table lock if it is not held by another thread within the given waiting time and the current thread has not been interrupted. */
+	@Override
+	public final boolean tryLock(final long timeout, final TimeUnit unit){ return tryLock(timeout,unit);} 
+	
+	/** Attempts to release the table lock. */
+	@Override
+	public final void unlock(){tableLock.unlock();} 
+
 	//*******************************************************************
 	//*******************************************************************
 	//*******************************************************************
@@ -2209,7 +2233,7 @@ public class TableCore implements Serializable{
 		return removeOccupancyRatio;
 	}
 
-	final void setRemoveOccupancyRatio(double removeOccupancyRatio) {
+	final void setRemoveOccupancyRatio(final double removeOccupancyRatio) {
 		if(operational) return;
 		this.removeOccupancyRatio = removeOccupancyRatio;
 	}
@@ -2218,7 +2242,7 @@ public class TableCore implements Serializable{
 		return combineOccupancyRatio;
 	}
 
-	final void setCombineOccupancyRatio(double combineOccupancyRatio) {
+	final void setCombineOccupancyRatio(final double combineOccupancyRatio) {
 		if(operational) return;
 		this.combineOccupancyRatio = combineOccupancyRatio;
 	}
@@ -2231,12 +2255,29 @@ public class TableCore implements Serializable{
 		return rowAccessTypeFactory;
 	}
 
-	final void setRowAccessTypeFactory(RowAccessTypeFactory rowAccessTypeFactory) {
+	final void setRowAccessTypeFactory(final RowAccessTypeFactory rowAccessTypeFactory) {
 		this.rowAccessTypeFactory = rowAccessTypeFactory;
 		this.rowAccessTypeFactorySet = true;
 	}
-	
-	
-	
-	
+
+	public final boolean isBackupNeedsLock() {
+		return backupNeedsLock;
+	}
+
+	public final void setBackupNeedsLock(final boolean backupNeedsLock) {
+		this.backupNeedsLock = backupNeedsLock;
+	}
+
+	public final boolean isShutdownNeedsLock() {
+		return shutdownNeedsLock;
+	}
+
+	public final void setShutdownNeedsLock(final boolean shutdownNeedsLock) {
+		this.shutdownNeedsLock = shutdownNeedsLock;
+	}
+
+	// Note package scope
+	long getTableNumber() {
+		return tableNumber;
+	}	
 }

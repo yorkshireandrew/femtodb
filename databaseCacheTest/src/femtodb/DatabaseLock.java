@@ -17,7 +17,7 @@ public class DatabaseLock implements java.util.concurrent.locks.Lock{
 	/** Blocks until the lock has been obtained. If the calling thread gets interrupted the method still continues blocking until the lock has been obtained. */ 
 	@Override
 	synchronized
-	public void lock() {
+	public final void lock() {
 		
 		if(currentLockHolder == null)
 		{
@@ -46,7 +46,7 @@ public class DatabaseLock implements java.util.concurrent.locks.Lock{
 	
 	/** Blocks until the lock is acquired for shutting down. This is the highest priority lock request. */
 	synchronized
-	public void shutdownLock() {
+	public final void shutdownLock() {
 		
 		if(currentLockHolder == null)
 		{
@@ -72,7 +72,7 @@ public class DatabaseLock implements java.util.concurrent.locks.Lock{
 	
 	/** Blocks until the lock is acquired for backing up. This has a higher priority normal lock calls but blocks forever once shutdownLock is called. */
 	synchronized
-	public void backupLock() {
+	public final void backupLock() {
 		
 		if(currentLockHolder == null)
 		{
@@ -95,7 +95,7 @@ public class DatabaseLock implements java.util.concurrent.locks.Lock{
 	/** Blocks until the lock has been obtained. If the calling thread gets interrupted the method will throw an InterruptedException. */ 
 	@Override
 	synchronized
-	public void lockInterruptibly() throws InterruptedException {
+	public final void lockInterruptibly() throws InterruptedException {
 		if(currentLockHolder == null)
 		{
 			currentLockHolder = Thread.currentThread();
@@ -115,7 +115,7 @@ public class DatabaseLock implements java.util.concurrent.locks.Lock{
 	/** Attempts to acquire the lock returning immediately. If there are no threads currently holding the lock then the caller is given the lock and the method will return true. */
 	@Override
 	synchronized
-	public boolean tryLock() {
+	public final boolean tryLock() {
 		if(currentLockHolder == null)
 		{
 			currentLockHolder = Thread.currentThread();
@@ -128,7 +128,7 @@ public class DatabaseLock implements java.util.concurrent.locks.Lock{
 	/** Attempts to acquire the lock with a timeout. Returns true if the lock was acquired */
 	@Override
 	synchronized
-	public boolean tryLock(long time, TimeUnit unit) throws InterruptedException {
+	public final boolean tryLock(long time, TimeUnit unit) throws InterruptedException {
 		// return true if not locked
 		if(currentLockHolder == null)
 		{
@@ -194,7 +194,7 @@ public class DatabaseLock implements java.util.concurrent.locks.Lock{
 	 */
 	@Override
 	synchronized
-	public void unlock() {
+	public final void unlock() {
 		
 		// return if we do not hold the lock
 		Thread currentLockHolderL = currentLockHolder;
@@ -229,7 +229,7 @@ public class DatabaseLock implements java.util.concurrent.locks.Lock{
 	}
 
 	@Override
-	public Condition newCondition() {
+	public final Condition newCondition() {
 		// NOT IMPLEMENTED
 		return null;
 	}
@@ -267,7 +267,7 @@ public class DatabaseLock implements java.util.concurrent.locks.Lock{
 	
 	/** Returns true if the lock is currently held by the calling thread */
 	synchronized
-	public boolean isHeldByCurrentThread()
+	public final boolean isHeldByCurrentThread()
 	{
 		if((currentLockHolder != null)&&(currentLockHolder == Thread.currentThread()))return true;
 		return false;
@@ -275,17 +275,9 @@ public class DatabaseLock implements java.util.concurrent.locks.Lock{
 	
 	/** Returns true if a thread currently holds the lock */
 	synchronized
-	public boolean isLocked()
+	public final boolean isLocked()
 	{
 		if(currentLockHolder == null)return true;
 		return false;
 	}
-	
-	
-	
-	
-	
-	
-
-	
 }

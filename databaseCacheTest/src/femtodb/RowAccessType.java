@@ -9,7 +9,7 @@ public class RowAccessType {
 	TableCore tableCore;
 	byte[] byteArray;
 	
-	RowAccessType(long primaryKey, short flags, TableCore tableCore, byte[] byteArray, RowAccessTypeFactory source)
+	RowAccessType(final long primaryKey, final short flags, final TableCore tableCore, final byte[] byteArray, final RowAccessTypeFactory source)
 	{
 		this.primaryKey = primaryKey;
 		this.flags = flags;
