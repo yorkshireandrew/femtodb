@@ -627,11 +627,11 @@ public class TableCore implements Serializable, Lock{
 	private final void flushCachePage(final int page) throws FemtoDBIOException
 	{	
 		FileMetadata fmd = cacheContents[page];
-		System.out.println("freeing cache page " + page);
+//		System.out.println("freeing cache page " + page);
 		if(fmd == null)return; // cache page must already be free
 		if(fmd.modified)
 		{
-			System.out.println("containing " + fmd.toString());
+//			System.out.println("containing " + fmd.toString());
 			File f = new File(fmd.filename);
 			try
 			{
@@ -1180,9 +1180,9 @@ public class TableCore implements Serializable, Lock{
 	final byte[] seekByteArray(final long primaryKey) throws FemtoDBIOException
 	{
 		serviceNumber++;
-		System.out.println("seeking " + primaryKey);
+//		System.out.println("seeking " + primaryKey);
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
-		System.out.println("is in metafile index " + fileMetadataListIndex);
+//		System.out.println("is in metafile index " + fileMetadataListIndex);
 		// ensure the file containing the range the primary key falls in is loaded into the cache
 		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
 		int page = cachePageOf(fmd);
@@ -1215,9 +1215,9 @@ public class TableCore implements Serializable, Lock{
 		if(shuttingDown)throw new FemtoDBShuttingDownException();
 		if(deleted)throw new FemtoDBTableDeletedException();
 		serviceNumber++;
-		System.out.println("seeking " + primaryKey);
+//		System.out.println("seeking " + primaryKey);
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
-		System.out.println("is in metafile index " + fileMetadataListIndex);
+//		System.out.println("is in metafile index " + fileMetadataListIndex);
 		// ensure the file containing the range the primary key falls in is loaded into the cache
 		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
 		
@@ -1396,7 +1396,7 @@ public class TableCore implements Serializable, Lock{
 			priorIndex = testIndex;
 			
 			testPK 		= getPrimaryKeyForCacheRow(page, testIndex);
-			System.out.println("returned primary key for row " + testPK);
+//			System.out.println("returned primary key for row " + testPK);
 			toBig 	= (primaryKey < testPK);
 			toSmall = (primaryKey > testPK);
 		}
@@ -1798,8 +1798,8 @@ public class TableCore implements Serializable, Lock{
 		}
 		else
 		{
-			System.out.println("fmd " + fmd.filename + " says it isnt cached so loading");
-			System.out.println("fmd " + fmd.hashCode());
+//			System.out.println("fmd " + fmd.filename + " says it isnt cached so loading");
+//			System.out.println("fmd " + fmd.hashCode());
 			return loadFileIntoCache(fmd);
 		}
 	}
@@ -1946,12 +1946,12 @@ public class TableCore implements Serializable, Lock{
     	for(FileMetadata fmd : fileMetadata)
     	{
     		File sourceFile = new File(fmd.filename);
-    		String fullDestString = destDirectory + File.separator + Long.toString(fmd.filenumber);
+    		String fullDestString = tableDirectoryString + File.separator + Long.toString(fmd.filenumber);
     		File destFile = new File(fullDestString);
     		try {
 				FileUtils.copyFile(sourceFile, destFile);
 			} catch (IOException e) {
-				throw new FemtoDBIOException("During backup or save of table " + name + " IOException occured copying table data to file:" + fullDestString);
+				throw new FemtoDBIOException("During backup or save of table " + name + " IOException occured copying table data to file:" + fullDestString,e);
 			}
     	}
     }

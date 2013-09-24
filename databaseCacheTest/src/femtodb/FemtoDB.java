@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import femtodbexceptions.FemtoDBIOException;
 import femtodbexceptions.FemtoDBShuttingDownException;
@@ -31,9 +32,9 @@ public class FemtoDB implements Serializable, Lock {
 	private long 					nextUnusedTableNumber;
 
 	
-	private DatabaseLock		databaseLock;
-	private boolean 			shuttingDown;
-	private String				backupDirectory;	
+	private transient DatabaseLock	databaseLock;
+	private boolean 				shuttingDown;
+	private String					backupDirectory;	
 	
 	/** Constructs a database core requiring a name as an argument. The setPath method must be also called before the database can be used */
 	public FemtoDB(final String name)
@@ -418,6 +419,7 @@ public class FemtoDB implements Serializable, Lock {
 			retval.setPath(path);
 			retval.setBackupDirectory(backupDirectory);
 			retval.loadTables();
+			retval.databaseLock = new DatabaseLock();
 			retval.shuttingDown = false;
 			return retval;
 
@@ -438,6 +440,7 @@ public class FemtoDB implements Serializable, Lock {
 	{
 		// Open the database if it is not corrupt or was incorrectly shutdown
 		long databaseStart = getDatabaseStart(path,true);
+		if(databaseStart != -1L)System.out.println("Database appears to be fine with start number " + databaseStart);
 		if(databaseStart != -1L)return openInternal(path,backupDirectory);
 		if(backupDirectory == null)throw new FemtoDBIOException("Failed to open the database. The database at " + path + " appears to be corrupt or missing and the backup location given was null");				
 	
@@ -451,6 +454,12 @@ public class FemtoDB implements Serializable, Lock {
 		File databaseFile = new File(path);
 		File pingFile = new File(pingDirectoryString);
 		File pongFile = new File(pongDirectoryString);
+		
+		System.out.println("Database appears to be corrupt opening using a backup");
+		if(pingOK)System.out.println("Ping is OK");
+		System.out.println("Ping start is " + pingStart);
+		if(pongOK)System.out.println("Pong is OK");
+		System.out.println("Pong start is " + pongStart);
 		
 		if( pingOK && pongOK )
 		{
@@ -645,10 +654,8 @@ public class FemtoDB implements Serializable, Lock {
 	public final void setPath(final String path) throws FemtoDBIOException {
 		this.path = path;
 		File pathFile = new File(path);
-		if(pathFile.exists())
-		{
-				generateStartFile(path);
-		}
+		if(!pathFile.exists())pathFile.mkdirs();
+		generateStartFile(path);
 	}
 	
 	

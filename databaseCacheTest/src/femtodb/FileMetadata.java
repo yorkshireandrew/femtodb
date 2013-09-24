@@ -85,8 +85,8 @@ public class FileMetadata implements Serializable{
 		owner 		= newOwner;
     	filename 	= owner.getTableDirectory() + File.separator +
 						Long.toString(filenumber);
-    	System.out.println("Filenumber " + filenumber + " setting filename to " + filename);
-    	System.out.println(this.hashCode());
+ //   	System.out.println("Filenumber " + filenumber + " setting filename to " + filename);
+ //   	System.out.println(this.hashCode());
     	cached 		= false;
 		cacheIndex 	= -1;
     }
