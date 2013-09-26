@@ -737,10 +737,12 @@ public class TableCore implements Serializable, Lock{
 		// Nether are cached so pick shortest
 		if(frontCombinedRows < backCombinedRows)
 		{
+			System.out.println("combining with front");
 			combineStage2(page,cacheToFreeFMD,frontFMD,true);
 		}
 		else
 		{
+			System.out.println("combining with front");
 			combineStage2(page,cacheToFreeFMD,backFMD,false);
 		}	
 	}
@@ -989,8 +991,9 @@ public class TableCore implements Serializable, Lock{
 		
 		// make room for the insert into pkCache and flagCache
 		int srcPos1 				= pkCachePageStart + insertRow;
-		System.arraycopy(pkCacheL, srcPos1, pkCacheL, srcPos1, (fmdRows - insertRow) );
-		System.arraycopy(flagCacheL, srcPos1, flagCacheL, srcPos1, (fmdRows - insertRow) );
+		int desPos1 				= srcPos1 + 1;
+		System.arraycopy(pkCacheL, srcPos1, pkCacheL, desPos1, (fmdRows - insertRow) );
+		System.arraycopy(flagCacheL, srcPos1, flagCacheL, desPos1, (fmdRows - insertRow) );
 		
 		// make room for the insert into the cache
 		int srcPos2 				= cachePageStart + insertRow * tableWidthL;
@@ -1255,20 +1258,51 @@ public class TableCore implements Serializable, Lock{
 	synchronized
 	public final boolean deleteByPrimaryKey(final long primaryKey) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
+		System.out.println("DELETE BY PRIMARY KEY");
+		System.out.println("--------------------------------");
+		for(FileMetadata show : fileMetadata)
+		{
+			System.out.println("" + show.filenumber + " pkmin " + show.smallestPK + " pkmax " + show.largestPK + " rows " + show.rows);
+		}
+		System.out.println("--------------------------------");
+		
 		if(shuttingDown)throw new FemtoDBShuttingDownException();
 		if(deleted)throw new FemtoDBTableDeletedException();
 		serviceNumber++;
 		int fileMetadataListIndex = fileMetadataBinarySearch(primaryKey);
-		
+		System.out.println("fileMetadataListIndex " + fileMetadataListIndex + " for primary Key " + primaryKey);
 		// ensure the file containing the range the primary key falls in is loaded into the cache
 		FileMetadata fmd = fileMetadata.get(fileMetadataListIndex);
+		
 		int page = cachePageOf(fmd);
+		System.out.println("check cache page " + page);
+		System.out.println(this.cacheToString());
 		
-		if(fmd.rows == 0)return false;	// empty tableCore!		
+		if(fmd.rows == 0)
+		{
+			System.out.println("EMPTY TABLECORE DURING DELETE");
+			return false;	// empty tableCore!		
+		}
 		int row = primaryKeyBinarySearch(page, primaryKey, false, false);
-		if(row == -1)return false;		// primary key not found
-		
+		if(row == -1)
+		{
+			System.out.println("FAILED TO FIND PK DURING DELETE");
+			return false;		// primary key not found
+		}
+		System.out.println("row " + row + " for primary Key " + primaryKey);
+	
 		deleteRow(primaryKey,page,row);
+		
+		System.out.println(" Now the cache looks like this....");
+		System.out.println(this.cacheToString());
+		
+		System.out.println("--------------------------------");
+		for(FileMetadata show : fileMetadata)
+		{
+			System.out.println("" + show.filenumber + " pkmin " + show.smallestPK + " pkmax " + show.largestPK + " rows " + show.rows);
+		}
+		System.out.println("--------------------------------");
+		
 		return true;
 	}
 	

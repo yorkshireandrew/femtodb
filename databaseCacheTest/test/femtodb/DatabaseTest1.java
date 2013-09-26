@@ -202,8 +202,6 @@ public class DatabaseTest1 {
 		}
 	}
 	
-	
-	/*
 	@Test
 	public void testBackupOpenUsingPong()
 	{	
@@ -252,11 +250,23 @@ public class DatabaseTest1 {
 			// *****************  CHANGE THE DATA ******************
 			for(int x = 1; x < 15; x++)
 			{
+				table1.deleteByPrimaryKey((long)x);
+			}
+			
+			for(int x = 1; x < 15; x++)
+			{
 				BuffWrite.writeLong(toInsert, 0, (long)x);
 				BuffWrite.writeShort(toInsert, 8, (30 * x));
-				BuffWrite.writeInt(toInsert, 10, (3 * x));	
+				BuffWrite.writeInt(toInsert, 10, (3 * x));
+				if(x == 14)
+				{
+					System.out.println("got to 14");
+				}
+				table1.deleteByPrimaryKey((long)x);
 				table1.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert);
 			}
+			System.out.println(table1.toString());
+			System.out.println(table1.cacheToString());
 			
 			// *****************  BACKUP TO PONG ******************
 			Thread.sleep(10);
@@ -298,7 +308,6 @@ public class DatabaseTest1 {
 			fail();
 		}
 	}
-	
-	*/
+
 
 }

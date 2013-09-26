@@ -40,14 +40,14 @@ public class TableTest {
 
 	@Test
 	public void testWriteReadDelete() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
-	{
-		FemtoDB fdb = new FemtoDB("debug1");
-		fdb.setPath("debug1");
-		
+	{	
 		// make a fresh directory
 		File f = new File("debug1");
-		if(f.exists())f.delete();
+		if(f.exists())FileUtils.recursiveDelete(f);
 		f.mkdir();
+		
+		FemtoDB fdb = new FemtoDB("debug1");
+		fdb.setPath("debug1");
 		
 		// create the tableCore
 		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
@@ -90,13 +90,14 @@ public class TableTest {
 	public void testSequentialWriteReadDelete()
 	{	
 		try{
-		FemtoDB fdb = new FemtoDB("debug1");
-		fdb.setPath("debug1");
 		
 		// make a fresh directory
 		File f = new File("debug1");
-		if(f.exists())f.delete();
+		if(f.exists())FileUtils.recursiveDelete(f);
 		f.mkdir();
+		
+		FemtoDB fdb = new FemtoDB("debug1");
+		fdb.setPath("debug1");
 		
 		// create the tableCore
 		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
@@ -186,18 +187,117 @@ public class TableTest {
 	}
 	
 	
+	@Test
+	public void testSequentialWriteReadDeleteVersion2()
+	{	
+		try{
+			// make a fresh directory
+			File f = new File("debug1");
+			if(f.exists())FileUtils.recursiveDelete(f);
+			f.mkdir();
+			
+			FemtoDB fdb = new FemtoDB("debug1");
+			fdb.setPath("debug1");
+		
+		// create the tableCore
+		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
+		tut.setRowsPerFile(5);
+		tut.setRemoveOccupancyRatio(0.4);
+		tut.setCombineOccupancyRatio(0.8);
+		tut.addIntegerColumn("payload");
+		tut.setCacheSize(140);
+		try {
+			tut.makeOperational();
+			
+			// first insert
+			byte[] toInsert = new byte[8+2+4];
+			byte[] readBack;
+			
+			// insert a load of stuff
+			for(int x = 1; x < 15; x++)
+			{
+				BuffWrite.writeLong(toInsert, 0, (long)x);
+				BuffWrite.writeShort(toInsert, 8, (x));
+				BuffWrite.writeInt(toInsert, 10, (x));	
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert);
+			}
+				
+			// read it back
+			for(int x = 1; x < 15; x++)
+			{
+				readBack = tut.seekByteArray((long)x);
+				int readInt = BuffRead.readInt(readBack, 10);
+				assertEquals((x), readInt);
+			}	
+			
+			// insert a load of different stuff by deleting just prior to insert
+			for(int x = 1; x < 15; x++)
+			{
+				BuffWrite.writeLong(toInsert, 0, (long)x);
+				BuffWrite.writeShort(toInsert, 8, (16 + x));
+				BuffWrite.writeInt(toInsert, 10, (16 * x));
+				System.out.println("DELETING " + x);
+				tut.deleteByPrimaryKey(x);
+//				System.out.println("RESULT");
+//				System.out.println(tut);
+//				System.out.println(tut.cacheToString());
+				System.out.println("INSERTING " + x);		
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert);
+				System.out.println(tut.cacheToString());
+			}
+			
+			// read it back
+			for(int x = 1; x < 15; x++)
+			{
+				readBack = tut.seekByteArray((long)x);
+				int readInt = BuffRead.readInt(readBack, 10);
+				assertEquals((16 * x), readInt);
+			}				
+			
+			// alter it all backwards
+			for(int x = 14; x >= 1; x--)
+			{
+				BuffWrite.writeLong(toInsert, 0, (long)x);
+				BuffWrite.writeShort(toInsert, 8, (10 * x));
+				BuffWrite.writeInt(toInsert, 10, (4 * x));	
+				tut.deleteByPrimaryKey(x);
+				tut.insertOrIgnoreByteArrayByPrimaryKey((long)x, toInsert);
+			}	
+			
+			// check it reads back ok
+			for(int x = 1; x < 15; x++)
+			{
+				readBack = tut.seekByteArray((long)x);
+				int readInt = BuffRead.readInt(readBack, 10);
+				assertEquals((4*x), readInt);
+			}	
+			
+			
+		} catch (FemtoDBInvalidValueException e) {
+			fail();
+		} catch (FemtoDBIOException e) {
+			fail();
+		}
+		}catch(Exception e)
+		{
+			System.out.println(e);
+			e.printStackTrace();
+		}
+	}
+	
+
 	//********************** RAT based testSequentialWriteReadDelete ***********************
 	
 	@Test
 	public void testSequentialWriteReadDeleteByRAT() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{	
-		FemtoDB fdb = new FemtoDB("debug1");
-		fdb.setPath("debug1");
-		
 		// make a fresh directory
 		File f = new File("debug1");
-		if(f.exists())f.delete();
+		if(f.exists())FileUtils.recursiveDelete(f);
 		f.mkdir();
+		
+		FemtoDB fdb = new FemtoDB("debug1");
+		fdb.setPath("debug1");
 		
 		// create the tableCore
 		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
@@ -288,13 +388,13 @@ public class TableTest {
 	@Test
 	public void fastIteratorTest() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
-		FemtoDB fdb = new FemtoDB("debug1");
-		fdb.setPath("debug1");
-		
 		// make a fresh directory
 		File f = new File("debug1");
-		if(f.exists())f.delete();
+		if(f.exists())FileUtils.recursiveDelete(f);
 		f.mkdir();
+		
+		FemtoDB fdb = new FemtoDB("debug1");
+		fdb.setPath("debug1");
 		
 		// create the tableCore
 		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
@@ -365,21 +465,20 @@ public class TableTest {
 			fail();
 		} catch (FemtoDBConcurrentModificationException e) {
 			fail();
-		}
-		
+		}	
 	}
 	
 	
 	@Test
 	public void SafeIteratorTest() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
-		FemtoDB fdb = new FemtoDB("debug1");
-		fdb.setPath("debug1");
-		
 		// make a fresh directory
 		File f = new File("debug1");
-		if(f.exists())f.delete();
+		if(f.exists())FileUtils.recursiveDelete(f);
 		f.mkdir();
+		
+		FemtoDB fdb = new FemtoDB("debug1");
+		fdb.setPath("debug1");
 		
 		// create the tableCore
 		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
@@ -454,23 +553,20 @@ public class TableTest {
 		
 	}
 	
-
-	
 	/** tests deleteing stuff the interator has travelled over 
 	 * @throws FemtoDBIOException 
 	 * @throws FemtoDBTableDeletedException 
 	 * @throws FemtoDBShuttingDownException */
-
 	@Test
 	public void SafeIteratorTest2() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
-		FemtoDB fdb = new FemtoDB("debug1");
-		fdb.setPath("debug1");
-		
 		// make a fresh directory
 		File f = new File("debug1");
-		if(f.exists())f.delete();
+		if(f.exists())FileUtils.recursiveDelete(f);
 		f.mkdir();
+		
+		FemtoDB fdb = new FemtoDB("debug1");
+		fdb.setPath("debug1");
 		
 		// create the tableCore
 		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
@@ -573,13 +669,13 @@ public class TableTest {
 	@Test
 	public void SafeIteratorTest3() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
-		FemtoDB fdb = new FemtoDB("debug1");
-		fdb.setPath("debug1");
-		
 		// make a fresh directory
 		File f = new File("debug1");
-		if(f.exists())f.delete();
+		if(f.exists())FileUtils.recursiveDelete(f);
 		f.mkdir();
+		
+		FemtoDB fdb = new FemtoDB("debug1");
+		fdb.setPath("debug1");
 		
 		// create the tableCore
 		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
@@ -677,13 +773,13 @@ public class TableTest {
 	@Test
 	public void SafeIteratorTest4() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
-		FemtoDB fdb = new FemtoDB("debug1");
-		fdb.setPath("debug1");
-		
 		// make a fresh directory
 		File f = new File("debug1");
-		if(f.exists())f.delete();
+		if(f.exists())FileUtils.recursiveDelete(f);
 		f.mkdir();
+		
+		FemtoDB fdb = new FemtoDB("debug1");
+		fdb.setPath("debug1");
 		
 		// create the tableCore
 		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
@@ -757,13 +853,13 @@ public class TableTest {
 	@Test
 	public void SafeIteratorTest5() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
-		FemtoDB fdb = new FemtoDB("debug1");
-		fdb.setPath("debug1");
-		
 		// make a fresh directory
 		File f = new File("debug1");
-		if(f.exists())f.delete();
+		if(f.exists())FileUtils.recursiveDelete(f);
 		f.mkdir();
+		
+		FemtoDB fdb = new FemtoDB("debug1");
+		fdb.setPath("debug1");
 		
 		// create the tableCore
 		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
@@ -862,13 +958,13 @@ public class TableTest {
 	@Test
 	public void testSerialisation() throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
-		FemtoDB fdb = new FemtoDB("debug1");
-		fdb.setPath("debug1");
-		
 		// make a fresh directory
 		File f = new File("debug1");
-		if(f.exists())f.delete();
+		if(f.exists())FileUtils.recursiveDelete(f);
 		f.mkdir();
+		
+		FemtoDB fdb = new FemtoDB("debug1");
+		fdb.setPath("debug1");
 		
 		// create the tableCore
 		TableCore tut = new TableCore(fdb, "debugtable1", 0, "pk");
@@ -966,5 +1062,4 @@ public class TableTest {
 			fail();			
 		}
 	}
-	
 }

@@ -446,7 +446,7 @@ public class FemtoDB implements Serializable, Lock {
 	
 		// The database looks corrupt so attempt to recover using the most recent backup
 		String pingDirectoryString = backupDirectory + File.separator + "ping";
-		String pongDirectoryString = backupDirectory + File.separator + "ping";
+		String pongDirectoryString = backupDirectory + File.separator + "pong";
 		long pingStart = getDatabaseStart(pingDirectoryString,true);
 		long pongStart = getDatabaseStart(pongDirectoryString,true);
 		boolean pingOK = (pingStart != -1);
@@ -467,14 +467,14 @@ public class FemtoDB implements Serializable, Lock {
 			{
 				// recover using ping			
 				try {
-					FileUtils.recursiveCopy(databaseFile,pingFile);
+					FileUtils.recursiveCopy(pingFile,databaseFile);
 					return openInternal(path,backupDirectory);				
 				} 
 				catch (IOException e)
 				{
 					// ping failed try pong
 					try {
-						FileUtils.recursiveCopy(databaseFile,pongFile);
+						FileUtils.recursiveCopy(pongFile,databaseFile);
 						return openInternal(path,backupDirectory);
 					} catch (IOException e1) {
 						throw new FemtoDBIOException("Failed to open the database. The database appears to be corrupt, both the backups appear to be functional but threw IOExceptions whilst copying.", e1);
@@ -483,16 +483,20 @@ public class FemtoDB implements Serializable, Lock {
 			}
 			else
 			{
-				// recover using pong			
+				// recover using pong	
+				System.out.println(" recover using pong ");
 				try {
-					FileUtils.recursiveCopy(databaseFile,pongFile);
+					FileUtils.recursiveCopy(pongFile,databaseFile);
 					return openInternal(path,backupDirectory);				
 				} 
 				catch (IOException e)
 				{
+					System.out.println(e);
+					e.printStackTrace();
+					System.out.println(" pong failed trying ping ");
 					// pong failed try ping
 					try {
-						FileUtils.recursiveCopy(databaseFile,pingFile);
+						FileUtils.recursiveCopy(pingFile,databaseFile);
 						return openInternal(path,backupDirectory);
 					} catch (IOException e1) {
 						throw new FemtoDBIOException("Failed to open the database. The database appears to be corrupt, both the backups appear to be functional but threw IOExceptions whilst copying.", e1);
@@ -505,7 +509,7 @@ public class FemtoDB implements Serializable, Lock {
 		{
 			// recover using ping only		
 			try {
-				FileUtils.recursiveCopy(databaseFile,pingFile);
+				FileUtils.recursiveCopy(pingFile,databaseFile);
 				return openInternal(path,backupDirectory);				
 			} 
 			catch (IOException e)
@@ -518,7 +522,7 @@ public class FemtoDB implements Serializable, Lock {
 		{
 			// recover using pong only		
 			try {
-				FileUtils.recursiveCopy(databaseFile,pongFile);
+				FileUtils.recursiveCopy(pongFile,databaseFile);
 				return openInternal(path,backupDirectory);				
 			} 
 			catch (IOException e)
