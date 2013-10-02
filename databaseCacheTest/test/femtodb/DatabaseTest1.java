@@ -1,28 +1,23 @@
 package femtodb;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+//import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+//import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import femtodbexceptions.FemtoDBConcurrentModificationException;
+//import femtodbexceptions.FemtoDBConcurrentModificationException;
 import femtodbexceptions.FemtoDBIOException;
 import femtodbexceptions.FemtoDBInvalidValueException;
-import femtodbexceptions.FemtoDBShuttingDownException;
-import femtodbexceptions.FemtoDBTableDeletedException;
+//import femtodbexceptions.FemtoDBShuttingDownException;
+//import femtodbexceptions.FemtoDBTableDeletedException;
 
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+
 
 public class DatabaseTest1 {
 
