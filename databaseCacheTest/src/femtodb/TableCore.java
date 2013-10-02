@@ -84,8 +84,8 @@ public class TableCore implements Serializable, Lock{
 		
 	/** Arrays and values for column meta data */
 	private String[]			columnNames;
-	private int[]				columnByteOffset;
-	private int[]				columnByteWidth;
+			int[]				columnByteOffset;
+			int[]				columnByteWidth;
 	private int					tableWidth;
 	
 	// ************ CACHES AND META DATA TABLES **********
