@@ -193,114 +193,114 @@ public class TableCore implements Serializable, Lock{
 	/** Adds a byte column to the tableCore */
 	public final void addByteColumn(String columnName)
 	{
-		if(operational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,1);
+		if(operational) 	return;
+		columnNames 		= addToArray(columnNames, columnName);
+		columnByteOffset 	= addToArray(columnByteOffset,tableWidth);
+		columnByteWidth 	= addToArray(columnByteWidth,1);
 		tableWidth++;
 	}
 	
 	/** Adds a Boolean column to the tableCore, its true width is one byte */
 	public final void addBooleanColumn(final String columnName)
 	{
-		if(operational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,1);
+		if(operational) 	return;
+		columnNames 		= addToArray(columnNames, columnName);
+		columnByteOffset 	= addToArray(columnByteOffset,tableWidth);
+		columnByteWidth 	= addToArray(columnByteWidth,1);
 		tableWidth++;
 	}
 	
 	/** Adds a byte array column to the tableCore, its true width is width + 4 bytes to encode length*/
-	public final void addBytesColumn(final String columnName, final int width) 
+	public final void addByteArrayColumn(final String columnName, final int width) 
 	{
-		if(operational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		int trueWidth = 4 + width;
-		columnByteWidth = addToArray(columnByteWidth,trueWidth);
-		tableWidth += trueWidth;
+		if(operational) 	return;
+		columnNames 		= addToArray(columnNames, columnName);
+		columnByteOffset 	= addToArray(columnByteOffset,tableWidth);
+		int trueWidth 		= 4 + width;
+		columnByteWidth 	= addToArray(columnByteWidth,trueWidth);
+		tableWidth 			+= trueWidth;
 	}
 	
 	/** Adds a Short column to the tableCore, its true width is 2 bytes */
 	public final void addShortColumn(final String columnName)
 	{
-		if(operational)return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,2);
-		tableWidth += 2;
+		if(operational)		return;
+		columnNames 		= addToArray(columnNames, columnName);
+		columnByteOffset 	= addToArray(columnByteOffset,tableWidth);
+		columnByteWidth 	= addToArray(columnByteWidth,2);
+		tableWidth 			+= 2;
 	}
 	
 	/** Adds a Character column to the tableCore, its true width is 2 bytes */
 	public final void addCharColumn(final String columnName)
 	{
-		if(operational)return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,2);
-		tableWidth += 2;
+		if(operational)		return;
+		columnNames 		= addToArray(columnNames, columnName);
+		columnByteOffset 	= addToArray(columnByteOffset,tableWidth);
+		columnByteWidth 	= addToArray(columnByteWidth,2);
+		tableWidth 			+= 2;
 	}
 	
 	/** Adds a Integer column to the tableCore, its true width is 2 bytes */
 	public final void addIntegerColumn(final String columnName)
 	{
-		if(operational)return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,4);
-		tableWidth += 4;
+		if(operational)		return;
+		columnNames 		= addToArray(columnNames, columnName);
+		columnByteOffset 	= addToArray(columnByteOffset,tableWidth);
+		columnByteWidth 	= addToArray(columnByteWidth,4);
+		tableWidth 			+= 4;
 	}
 	
 	/** Adds a Long column to the tableCore, its true width is 2 bytes */
 	public final void addLongColumn(final String columnName)
 	{
-		if(operational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,8);
-		tableWidth += 8;
+		if(operational) 	return;
+		columnNames 		= addToArray(columnNames, columnName);
+		columnByteOffset 	= addToArray(columnByteOffset,tableWidth);
+		columnByteWidth 	= addToArray(columnByteWidth,8);
+		tableWidth 			+= 8;
 	}
 	
 	/** Adds a Float column to the tableCore, its true width is 2 bytes */
 	public final void addFloatColumn(final String columnName)
 	{
-		if(operational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,4);
-		tableWidth += 4;
+		if(operational) 	return;
+		columnNames 		= addToArray(columnNames, columnName);
+		columnByteOffset 	= addToArray(columnByteOffset,tableWidth);
+		columnByteWidth 	= addToArray(columnByteWidth,4);
+		tableWidth 			+= 4;
 	}
 	
 	/** Adds a Double column to the tableCore, its true width is 2 bytes */
 	public final void addDoubleColumn(final String columnName) 
 	{
-		if(operational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		columnByteWidth = addToArray(columnByteWidth,8);
-		tableWidth += 8;
+		if(operational) 	return;
+		columnNames 		= addToArray(columnNames, columnName);
+		columnByteOffset 	= addToArray(columnByteOffset,tableWidth);
+		columnByteWidth 	= addToArray(columnByteWidth,8);
+		tableWidth 			+= 8;
 	}
 	
-	/** Adds a Char array column to the tableCore, its true width is width + 2 bytes to encode length*/
-	public final void addCharsColumn(final String columnName, final int width)
+	/** Adds a Char array column to the tableCore, its true width is width*2 + 2 bytes to encode length*/
+	public final void addCharArrayColumn(final String columnName, final int width)
 	{
-		if(operational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		int trueWidth = 2 + width;
-		columnByteWidth = addToArray(columnByteWidth,trueWidth);
-		tableWidth += trueWidth;
+		if(operational) 	return;
+		columnNames 		= addToArray(columnNames, columnName);
+		columnByteOffset 	= addToArray(columnByteOffset,tableWidth);
+		int trueWidth 		= 2 + width * 2;
+		columnByteWidth 	= addToArray(columnByteWidth,trueWidth);
+		tableWidth 			+= trueWidth;
 	}
 	
 	/** Adds a String column to the tableCore, its true width is width + 2 bytes, to encode the length. It is important to note the string gets stored in modified UTF format so the available width in characters may be less than the width parameter */
 	public final void addStringColumn(final String columnName, final int width) 
 	{
-		if(operational) return;
-		columnNames = addToArray(columnNames, columnName);
-		columnByteOffset = addToArray(columnByteOffset,tableWidth);
-		int trueWidth = 2 + width;
-		columnByteWidth = addToArray(columnByteWidth,trueWidth);
-		tableWidth += trueWidth;
+		if(operational) 	return;
+		columnNames 		= addToArray(columnNames, columnName);
+		columnByteOffset 	= addToArray(columnByteOffset,tableWidth);
+		int trueWidth 		= 2 + width;
+		columnByteWidth 	= addToArray(columnByteWidth,trueWidth);
+		tableWidth 			+= trueWidth;
 	}
 	
 	//*******************************************************************
@@ -913,6 +913,7 @@ public class TableCore implements Serializable, Lock{
 	 * @throws FemtoDBShuttingDownException */
 	public final void insert(final long primaryKey, final RowAccessType toInsert) throws FemtoDBIOException, FemtoDBPrimaryKeyUsedException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{
+		toInsert.prepareFlagsForPersisting();
 		boolean inserted = insertCore(primaryKey, toInsert.flags, toInsert.byteArray);
 		if(!inserted)throw new FemtoDBPrimaryKeyUsedException("Primary key " + primaryKey +" already in tableCore " + name);
 	}
@@ -1040,6 +1041,36 @@ public class TableCore implements Serializable, Lock{
 	//         START OF UPDATE CODE
 	//******************************************************
 	//******************************************************
+	
+	/** Updates a row given a primary key, throwing an exception if it is not present.
+	 * @param primaryKey			The primary key value where the row data will be inserted.
+	 * @param theNewRow				The RowAccessType representing the row to be placed into the table
+	 * @throws FemtoDBIOException
+	 * @throws FemtoDBShuttingDownException 
+	 * @throws FemtoDBTableDeletedException 
+	 * @throws FemtoDBPrimaryKeyNotFoundException
+	 */
+	public final void update(final long primaryKey, RowAccessType theNewRow) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException, FemtoDBPrimaryKeyNotFoundException
+	{
+		theNewRow.prepareFlagsForPersisting();
+		boolean updated = updateOrIgnore(primaryKey, theNewRow.flags, theNewRow.byteArray);
+		if(!updated)throw new FemtoDBPrimaryKeyNotFoundException("The primary key " + primaryKey + " was not found when updating a row in tableCore " + name);		
+	}
+
+	 
+	/** Updates a row given a primary key.
+	* @param primaryKey			The primary key value where the row data will be inserted.
+	* @param theNewRow				The RowAccessType representing the row to be placed into the table
+	* @return						True if an update occurred (the primary key exists)
+	* @throws FemtoDBIOException
+	* @throws FemtoDBShuttingDownException 
+	* @throws FemtoDBTableDeletedException 
+	*/	 
+	public final boolean updateOrIgnore(final long primaryKey, RowAccessType theNewRow) throws FemtoDBIOException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
+	{
+		theNewRow.prepareFlagsForPersisting();
+		return updateOrIgnore(primaryKey, theNewRow.flags, theNewRow.byteArray);
+	}	
 	
 	final void update(final long primaryKey, final short flag, final byte[] toInsert) throws FemtoDBIOException, FemtoDBPrimaryKeyNotFoundException, FemtoDBShuttingDownException, FemtoDBTableDeletedException
 	{

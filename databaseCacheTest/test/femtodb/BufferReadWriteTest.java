@@ -53,7 +53,7 @@ public class BufferReadWriteTest {
 		byte[] toWrite = new byte[2];
 		toWrite[0] = 10;
 		toWrite[1] = 20;
-		BuffWrite.writeBytes(buff, 1, toWrite);
+		BuffWrite.writeByteArray(buff, 1, toWrite);
 		
 		byte[] readBack = BuffRead.readByteArray(buff, 1);
 		assertEquals(2, readBack.length);
@@ -101,12 +101,12 @@ public class BufferReadWriteTest {
 		char[] chars = {'f','o','o','b','a','r'};
 		
 		try {
-			BuffWrite.writeChars(buff, 1, chars, 14);
+			BuffWrite.writeCharArray(buff, 1, chars, 14);
 		} catch (FemtoBDCharArrayExceedsColumnSizeException e) {
 			fail();
 		}
 		
-		char[] readBack = BuffRead.readChars(buff, 1);
+		char[] readBack = BuffRead.readCharArray(buff, 1);
 		assertEquals(6, readBack.length);
 		assertEquals('f',readBack[0]);
 		assertEquals('o',readBack[1]);
@@ -117,7 +117,7 @@ public class BufferReadWriteTest {
 		
 		// check exception thrown if limit it too low
 		try {
-			BuffWrite.writeChars(buff, 1, chars, 12);
+			BuffWrite.writeCharArray(buff, 1, chars, 12);
 			fail();
 		} catch (FemtoBDCharArrayExceedsColumnSizeException e) {}
 	}

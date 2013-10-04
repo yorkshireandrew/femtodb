@@ -2,6 +2,10 @@ package femtodb;
 
 import java.io.UTFDataFormatException;
 
+import femtodbexceptions.FemtoDBByteArrayExceedsColumnSizeException;
+import femtodbexceptions.FemtoBDCharArrayExceedsColumnSizeException;
+import femtodbexceptions.FemtoDBStringExceedsColumnSizeException;
+
 /** Class that represents a row taken from, or to be inserted into a database tableCore */
 public class RowAccessType {
 	/** The RowAccessTypeFactory that created this object so it can be reclaimed */
@@ -46,11 +50,22 @@ public class RowAccessType {
 		}		
 	}
 	
+	/** Called by insert or update just prior to persisting the RowAccessType to the database.
+	 *  It copies the flags field for the RowAccessType flags field into the cache. This is a package scope method.
+	 */
+	void prepareFlagsForPersisting()
+	{
+		if(!flagsInvalid)
+		{
+			BuffWrite.writeShort(byteArray, 8, flags);
+		}		
+	}
+	
 	// **********************************************************
 	// ************* GET METHODS FOR PRIMITIVE TYPES ************
 	// **********************************************************
 
-	/** Returns the byte in the given column, or -1 if null */	
+	/** Returns the byte primitive type in the given column, or -1 if null */	
 	public final byte get_byte(final int column)
 	{
 		ensureFlagsValid();
@@ -68,7 +83,7 @@ public class RowAccessType {
 		return BuffRead.readByteArray(byteArray, columnByteOffset[column]);	
 	}
 	
-	/** Returns the boolean value in the given column, or false if null */
+	/** Returns the boolean primitive type in the given column, or false if null */
 	public final boolean get_boolean(final int column)
 	{
 		ensureFlagsValid();
@@ -77,7 +92,7 @@ public class RowAccessType {
 		return BuffRead.readBoolean(byteArray, columnByteOffset[column]);	
 	}
 	
-	/** Returns the short value in the given column, or -1 if null */
+	/** Returns the short primitive type in the given column, or -1 if null */
 	public final short get_short(final int column)
 	{
 		ensureFlagsValid();
@@ -86,7 +101,7 @@ public class RowAccessType {
 		return BuffRead.readShort(byteArray, columnByteOffset[column]);	
 	}
 	
-	/** Returns the char value in the given column, or -1 if null */
+	/** Returns the char primitive type in the given column, or -1 if null */
 	public final char get_char(final int column)
 	{
 		ensureFlagsValid();
@@ -95,7 +110,7 @@ public class RowAccessType {
 		return BuffRead.readChar(byteArray, columnByteOffset[column]);	
 	}
 	
-	/** Returns the int value in the given column, or -1 if null */
+	/** Returns the int primitive type in the given column, or -1 if null */
 	public final int get_int(final int column)
 	{
 		ensureFlagsValid();
@@ -104,7 +119,7 @@ public class RowAccessType {
 		return BuffRead.readInt(byteArray, columnByteOffset[column]);	
 	}
 	
-	/** Returns the long value in the given column, or -1L if null */
+	/** Returns the long primitive type in the given column, or -1L if null */
 	public final long get_long(final int column)
 	{
 		ensureFlagsValid();
@@ -113,7 +128,7 @@ public class RowAccessType {
 		return BuffRead.readLong(byteArray, columnByteOffset[column]);	
 	}	
 	
-	/** Returns the float value in the given column, or NaN if null */
+	/** Returns the float primitive type in the given column, or NaN if null */
 	public final float get_float(final int column)
 	{
 		ensureFlagsValid();
@@ -122,7 +137,7 @@ public class RowAccessType {
 		return BuffRead.readFloat(byteArray, columnByteOffset[column]);	
 	}
 	
-	/** Returns the double value in the given column, or NaN if null */
+	/** Returns the double primitive type in the given column, or NaN if null */
 	public final double get_double(final int column)
 	{
 		ensureFlagsValid();
@@ -137,7 +152,7 @@ public class RowAccessType {
 		ensureFlagsValid();
 		if((flags|(1 << column)) == 0)return null;
 		int[] columnByteOffset = tableCore.columnByteOffset;
-		return BuffRead.readChars(byteArray, columnByteOffset[column]);	
+		return BuffRead.readCharArray(byteArray, columnByteOffset[column]);	
 	}
 	
 	// *****************************************************************
@@ -242,9 +257,234 @@ public class RowAccessType {
 		}	
 	}
 	
+	// **********************************************************
+	// ************* SET METHODS FOR WRAPPER/OBJECT TYPES ************
+	// **********************************************************
 	
+	/** Inserts a Byte object or null into the given column */
+	public final void setByte(final int column, final Byte val)
+	{
+		if(val == null)
+		{
+			flags &= ~(1 << column);
+		}
+		else
+		{
+			flags |= (1 << column);
+			int[] columnByteOffset = tableCore.columnByteOffset;
+			BuffWrite.write(byteArray, columnByteOffset[column],val);
+		}
+	}
 	
+	/** Inserts a Boolean object or null into the given column */
+	public final void setBoolean(final int column, final Boolean val)
+	{
+		if(val == null)
+		{
+			flags &= ~(1 << column);
+		}
+		else
+		{
+			flags |= (1 << column);
+			int[] columnByteOffset = tableCore.columnByteOffset;
+			BuffWrite.writeBoolean(byteArray, columnByteOffset[column],val);
+		}
+	}
 	
+	/** Inserts a Short object or null  into the given column */
+	public final void setShort(final int column, final Short val)
+	{
+		if(val == null)
+		{
+			flags &= ~(1 << column);
+		}
+		else
+		{
+			flags |= (1 << column);
+			int[] columnByteOffset = tableCore.columnByteOffset;
+			BuffWrite.writeShort(byteArray, columnByteOffset[column],val);
+		}
+	}
 	
+	/** Inserts a Character object or null into the given column */
+	public final void setCharacter(final int column, final Character val)
+	{
+		if(val == null)
+		{
+			flags &= ~(1 << column);
+		}
+		else
+		{
+			flags |= (1 << column);
+			int[] columnByteOffset = tableCore.columnByteOffset;
+			BuffWrite.writeChar(byteArray, columnByteOffset[column],val);
+		}
+	}
+	
+	/** Inserts a Integer object or null into the given column */
+	public final void setInteger(final int column, final Integer val)
+	{
+		if(val == null)
+		{
+			flags &= ~(1 << column);
+		}
+		else
+		{
+			flags |= (1 << column);
+			int[] columnByteOffset = tableCore.columnByteOffset;
+			BuffWrite.writeInt(byteArray, columnByteOffset[column],val);
+		}
+	}
+
+	/** Inserts a Long object or null into the given column */
+	public final void setLong(final int column, final Long val)
+	{
+		if(val == null)
+		{
+			flags &= ~(1 << column);
+		}
+		else
+		{
+			flags |= (1 << column);
+			int[] columnByteOffset = tableCore.columnByteOffset;
+			BuffWrite.writeLong(byteArray, columnByteOffset[column],val);
+		}
+	}
+	
+	/** Inserts a Float object or null into the given column */
+	public final void setFloat(final int column, final Float val)
+	{
+		if(val == null)
+		{
+			flags &= ~(1 << column);
+		}
+		else
+		{
+			flags |= (1 << column);
+			int[] columnByteOffset = tableCore.columnByteOffset;
+			BuffWrite.writeFloat(byteArray, columnByteOffset[column],val);
+		}
+	}
+	
+	/** Inserts a Double object or null into the given column */
+	public final void setDouble(final int column, final Double val)
+	{
+		if(val == null)
+		{
+			flags &= ~(1 << column);
+		}
+		else
+		{
+			flags |= (1 << column);
+			int[] columnByteOffset = tableCore.columnByteOffset;
+			BuffWrite.writeDouble(byteArray, columnByteOffset[column],val);
+		}
+	}
+	
+	/** Inserts a String object or null into the given column. Throws a FemtoDBStringExceedsColumnSizeException if it will not fit */
+	public final void setString(final int column, final String val) throws FemtoDBStringExceedsColumnSizeException
+	{
+		if(val == null)
+		{
+			flags &= ~(1 << column);
+		}
+		else
+		{
+			int[] columnByteOffset 	= tableCore.columnByteOffset;
+			int[] columnByteWidth 	= tableCore.columnByteWidth;
+			int columnByteWidth2 = columnByteWidth[column];
+			BuffWrite.writeString(byteArray, columnByteOffset[column], columnByteWidth2, val);
+			flags |= (1 << column);
+		}
+	}
+	
+	// **********************************************************
+	// ************* SET METHODS FOR PRIMATIVE TYPES ************
+	// **********************************************************
+
+	/** Inserts a byte primitive type into the given column */
+	public final void set_byte(final int column, final byte val)
+	{
+		flags |= (1 << column);
+		int[] columnByteOffset = tableCore.columnByteOffset;
+		BuffWrite.write(byteArray, columnByteOffset[column],val);
+	}
+	
+	/** Inserts a byte array into the given column. Throws a FemtoDBByteArrayExceedsColumnSizeException if it will not fit */
+	public final void set_byteArray(final int column, final byte[] val) throws FemtoDBByteArrayExceedsColumnSizeException
+	{
+		int[] columnByteOffset 	= tableCore.columnByteOffset;
+		int[] columnByteWidth 	= tableCore.columnByteWidth;
+		int columnByteWidth2 = columnByteWidth[column];
+		if((4 + val.length) > columnByteWidth2) throw new FemtoDBByteArrayExceedsColumnSizeException();
+		flags |= (1 << column);
+		BuffWrite.writeByteArray(byteArray, columnByteOffset[column], val);
+	}
+	
+	/** Inserts a boolean primitive type into the given column */
+	public final void set_boolean(final int column, final boolean val)
+	{
+		flags |= (1 << column);
+		int[] columnByteOffset = tableCore.columnByteOffset;
+		BuffWrite.writeBoolean(byteArray, columnByteOffset[column],val);
+	}
+	
+	/** Inserts a short primitive type into the given column */
+	public final void set_short(final int column, final short val)
+	{
+		flags |= (1 << column);
+		int[] columnByteOffset = tableCore.columnByteOffset;
+		BuffWrite.writeShort(byteArray, columnByteOffset[column],val);
+	}	
+	
+	/** Inserts a char primitive type into the given column */
+	public final void set_char(final int column, final char val)
+	{
+		flags |= (1 << column);
+		int[] columnByteOffset = tableCore.columnByteOffset;
+		BuffWrite.writeChar(byteArray, columnByteOffset[column],val);
+	}
+	
+	/** Inserts a int primitive type into the given column */
+	public final void set_int(final int column, final int val)
+	{
+		flags |= (1 << column);
+		int[] columnByteOffset = tableCore.columnByteOffset;
+		BuffWrite.writeInt(byteArray, columnByteOffset[column],val);
+	}
+
+	/** Inserts a long primitive type into the given column */
+	public final void set_long(final int column, final long val)
+	{
+		flags |= (1 << column);
+		int[] columnByteOffset = tableCore.columnByteOffset;
+		BuffWrite.writeLong(byteArray, columnByteOffset[column],val);
+	}
+	
+	/** Inserts a float primitive type into the given column */
+	public final void set_float(final int column, final float val)
+	{
+		flags |= (1 << column);
+		int[] columnByteOffset = tableCore.columnByteOffset;
+		BuffWrite.writeFloat(byteArray, columnByteOffset[column],val);
+	}
+	
+	/** Inserts a double primitive type into the given column */
+	public final void set_double(final int column, final double val)
+	{
+		flags |= (1 << column);
+		int[] columnByteOffset = tableCore.columnByteOffset;
+		BuffWrite.writeDouble(byteArray, columnByteOffset[column],val);
+	}
+	
+	/** Inserts a char array into the given column. Throws a FemtoDBCharArrayExceedsColumnSizeException if it will not fit */
+	public final void set_charArray(final int column, final char[] val) throws FemtoBDCharArrayExceedsColumnSizeException
+	{
+		int[] columnByteOffset 	= tableCore.columnByteOffset;
+		int[] columnByteWidth 	= tableCore.columnByteWidth;
+		int columnByteWidth2 = columnByteWidth[column];
+		BuffWrite.writeCharArray(byteArray, columnByteOffset[column], val,columnByteWidth2);
+		flags |= (1 << column);
+	}	
 	
 }

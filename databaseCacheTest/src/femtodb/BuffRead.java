@@ -84,7 +84,7 @@ public class BuffRead {
     	return Double.longBitsToDouble(readLong(data, offset));
     }
     
-    static final char[] readChars(final byte[] data, int offset)
+    static final char[] readCharArray(final byte[] data, int offset)
     {
     	int len = readShort(data,offset);
     	offset += 2;

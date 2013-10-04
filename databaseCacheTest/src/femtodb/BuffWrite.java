@@ -32,7 +32,7 @@ public class BuffWrite {
 	     * @param offset Offset into the data byte array to commence writing
 	     * @param src Source byte array
 	     */
-	    static final void writeBytes(final byte[] data, int offset, final byte[] src)
+	    static final void writeByteArray(final byte[] data, int offset, final byte[] src)
 	    {
 	    	int length = src.length;
 	    	writeInt(data,offset,src.length);
@@ -96,7 +96,7 @@ public class BuffWrite {
 	    }
 	    
 	    /** Writes a character array to the data byte array (including a 2 byte length value). The length must not exceed 65535 characters */
-	    static final void writeChars(final byte[] data, int offset, final char[] chars, int limit) throws FemtoBDCharArrayExceedsColumnSizeException
+	    static final void writeCharArray(final byte[] data, int offset, final char[] chars, int limit) throws FemtoBDCharArrayExceedsColumnSizeException
 	    {
 	    	int len = chars.length;
 	        if ((len*2 + 2) > limit)throw new FemtoBDCharArrayExceedsColumnSizeException();
