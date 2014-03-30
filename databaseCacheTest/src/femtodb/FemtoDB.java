@@ -424,6 +424,7 @@ public class FemtoDB implements Serializable, Lock {
 		} catch (IOException e) {
 			throw new FemtoDBIOException("Unable to read database file " + databaseFileString, e);
 		} catch (ClassNotFoundException e) {
+			try {is.close();} catch (IOException e1) {}
 			throw new FemtoDBIOException("Thats odd, I could not find FemtoDB class when opening database file." + databaseFileString, e);
 		}	
 	}

@@ -257,6 +257,15 @@ public class RowAccessType {
 		}	
 	}
 	
+	/** Returns true if the given column contains a null value */
+	public final boolean isColumnNull(final int column)
+	{
+		ensureFlagsValid();
+		if((flags|(1 << column)) == 0)return true;
+		return false;
+		
+	}
+	
 	// **********************************************************
 	// ************* SET METHODS FOR WRAPPER/OBJECT TYPES ************
 	// **********************************************************

@@ -534,7 +534,11 @@ public class TableCore implements Serializable, Lock{
 			FileInputStream fis = new FileInputStream(f);
 			int bytesToRead = tableWidth * fmd.rows;
 			int readByteCount = fis.read(cache, (page * fileSize), bytesToRead);
-			if(readByteCount != bytesToRead) throw new IOException("TableCore " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename + " expected " + bytesToRead + " and read " + readByteCount);
+			if(readByteCount != bytesToRead)
+			{
+				fis.close();
+				throw new IOException("TableCore " + name + "(" + tableNumber + ") Read incorrect number of bytes from file " + fmd.filename + " expected " + bytesToRead + " and read " + readByteCount);
+			}
 			fis.close();
 		}
 		catch(IOException e){throw new FemtoDBIOException(e.getMessage(),e);}
