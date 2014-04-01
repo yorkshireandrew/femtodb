@@ -44,5 +44,10 @@ public class NullFilt implements FemtoDBIterator {
 	public void reset() {
 		source.reset();
 	}
+	
+	@Override
+	public void setToo(long startPoint) throws FemtoDBIOException {
+		source.setToo(startPoint);	
+	}
 
 }

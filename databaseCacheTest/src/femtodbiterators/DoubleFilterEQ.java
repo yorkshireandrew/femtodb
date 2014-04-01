@@ -56,4 +56,8 @@ public class DoubleFilterEQ implements FemtoDBIterator{
 			source.reset();
 	}
 
+	@Override
+	public void setToo(long startPoint) throws FemtoDBIOException {
+		source.setToo(startPoint);	
+	}
 }

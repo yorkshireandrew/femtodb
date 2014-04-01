@@ -70,5 +70,10 @@ public class CharArrayFilterGT implements FemtoDBIterator{
 		}
 		return false;	
 	}
+	
+	@Override
+	public void setToo(long startPoint) throws FemtoDBIOException {
+		source.setToo(startPoint);	
+	}
 
 }

@@ -9,4 +9,5 @@ public interface FemtoDBIterator {
 	RowAccessType 	next() 	throws FemtoDBConcurrentModificationException,FemtoDBIOException;
 	void 			remove() 	throws UnsupportedOperationException, FemtoDBConcurrentModificationException, FemtoDBIOException;
 	void			reset();	
+	void			 setToo(final long startPoint) throws FemtoDBIOException; 
 }

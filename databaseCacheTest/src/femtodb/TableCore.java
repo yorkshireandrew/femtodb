@@ -1425,7 +1425,12 @@ public class TableCore implements Serializable, Lock{
 		return testIndex;		
 	}
 	
-	/** Returns the cache index for a given primary key. Requires the index for the containing file in the fileMetadata list. */
+	/** Returns the cache index for a given primary key. Requires the index for the containing file in the fileMetadata list. 
+	* @param An integer indicating which (already loaded) cache page contains the file that the primary key being searched for lies within.
+	* @param primaryKey The primary key being searched for.
+	* @param forInsert	If false the method returns -1 when the requested primaryKey cannot be found. If true the method returns the index of the primary key immediately below the requested primaryKey when the primary key cannot be found.
+	* @param overwritePrevention If false and the requested orimaryKey is found the method will return the index for the primaryKey. If true and the primaryKey is found then the method returns -1 instead. 
+	*/
 	private final int primaryKeyBinarySearch(final int page, final long primaryKey, final boolean forInsert, final boolean overwritePrevention)
 	{
 		FileMetadata fmd = cacheContents[page];
@@ -1628,9 +1633,46 @@ public class TableCore implements Serializable, Lock{
 						System.arraycopy(cache, srcPos, retval.byteArray, 0, tableWidth);
 						return retval;		
 					}
-				});
-		
+					
+					public final void setToo(final long startPoint) throws FemtoDBIOException 
+					{
+						synchronized(TableCore.this)
+						{
+								FileMetadata fmdContainingStart = null;
+								List<FileMetadata> fileMetadataL = fileMetadata;
+								int fmdIndex = fileMetadataBinarySearch(startPoint);
+								fmdContainingStart = fileMetadataL.get(fmdIndex);
+								int page = cachePageOf(fmdContainingStart);
+								
+								// find the row for either the startPoint or the position immediately before it
+								int row = primaryKeyBinarySearch(page, startPoint, true, true);
+								
+								if(row == -1)
+								{
+									// we hit the primaryKey so we need to step back
+									long startPointMinusOne = startPoint - 1;
+									fmdIndex = fileMetadataBinarySearch(startPointMinusOne);
+									fmdContainingStart = fileMetadataL.get(fmdIndex);
+									page = cachePageOf(fmdContainingStart);
+									row = primaryKeyBinarySearch(page, startPoint, true, false);
+								}
+								
+								//handle case of no rows
+								if(row >= fmdContainingStart.rows)
+								{
+									// reset the iterator
+									reset();
+									return;
+								}
+								
+								fmd = fmdContainingStart;
+								currentRow = row;
+								fmdRows = fmdContainingStart.rows;
+						}
+					}
+				});	
 	}
+
 	
 	/** Iterates over all the table rows. 
 	 * It implements the remove method and allows insertions and deletions 
@@ -1844,6 +1886,43 @@ public class TableCore implements Serializable, Lock{
 						int srcPos = page * fileSize + row * tableWidth;
 						System.arraycopy(cache, srcPos, retval.byteArray, 0, tableWidth);
 						return retval;		
+					}
+
+					@Override
+					public final void setToo(final long startPoint) throws FemtoDBIOException 
+					{
+						synchronized(TableCore.this)
+						{
+								long spi = startPoint;
+								FileMetadata fmdContainingStart = null;
+								List<FileMetadata> fileMetadataL = fileMetadata;
+								int fmdIndex = fileMetadataBinarySearch(spi);
+								fmdContainingStart = fileMetadataL.get(fmdIndex);
+								int page = cachePageOf(fmdContainingStart);
+								
+								// find the row for either the startPoint or the position immediately before it
+								int row = primaryKeyBinarySearch(page, spi, true, true);
+								
+								if(row == -1)
+								{
+									spi--;
+									fmdIndex = fileMetadataBinarySearch(spi);
+									fmdContainingStart = fileMetadataL.get(fmdIndex);
+									page = cachePageOf(fmdContainingStart);
+									row = primaryKeyBinarySearch(page, spi, true, false);	
+								}
+								
+								//handle case of no rows
+								if(row >= fmdContainingStart.rows)
+								{
+									// reset the iterator
+									reset();
+									return;
+								}
+
+								primaryKey = getPrimaryKeyForCacheRow(page, row);
+								hasPrimaryKey = true;
+						}
 					}
 				});
 		
